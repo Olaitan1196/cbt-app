@@ -72,13 +72,12 @@ const JambSimulationScreen = ({ route, navigation }) => {
     loadSimulationQuestions(allFourSubjects);
   };
 
-  const loadSimulationQuestions = (subjects) => {
+const loadSimulationQuestions = (subjects) => {
     try {
       const db = getDb();
       let allQuestions = [];
 
       for (const subject of subjects) {
-        // English gets 60 questions, others get 40
         const limit = subject === ENGLISH ? 60 : 40;
 
         const questions = db.getAllSync(
@@ -88,7 +87,6 @@ const JambSimulationScreen = ({ route, navigation }) => {
           [subject, limit]
         );
 
-        // Tag each question with its subject for display in quiz
         const tagged = questions.map((q) => ({
           ...q,
           simulation_subject: subject,
@@ -100,16 +98,18 @@ const JambSimulationScreen = ({ route, navigation }) => {
       if (allQuestions.length === 0) {
         Alert.alert(
           'No Questions Found',
-          'There are no JAMB questions in the database yet for the selected subjects. Please load questions first.'
+          'There are no JAMB questions in the database yet for the selected subjects.'
         );
         return;
       }
 
-      // Go to simulation quiz screen
-      navigation.navigate('SimulationQuiz', {
+      // Go to lobby instead of quiz directly
+      navigation.navigate('SimulationLobby', {
         student,
-        questions: allQuestions,
-        subjects: subjects,
+        subjects,
+        allQuestions,
+        answers: {},
+        timeLeft: 90 * 60,
         timerMinutes: 90,
       });
 

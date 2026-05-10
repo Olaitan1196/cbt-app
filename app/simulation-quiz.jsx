@@ -1,9 +1,9 @@
-// This is the Simulation Quiz Screen.
-// It is only used for JAMB Simulation mode.
-// It handles 180 questions across 4 subjects.
-// Score is calculated out of 400 at the end.
+// This screen handles one subject at a time during JAMB Simulation.
+// It receives answers from the lobby and updates them as the student answers.
+// When the student finishes a subject or switches, they return to the lobby.
+// The timer lives in the lobby. This screen just shows the time passed in.
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,20 +12,25 @@ import {
   SafeAreaView,
   ScrollView,
   Modal,
-  FlatList,
+  Alert,
 } from 'react-native';
 import { COLORS } from '../constants/colors';
-import { getDb } from '../database/db';
 
 const SimulationQuizScreen = ({ route, navigation }) => {
-  const { student, questions, subjects, timerMinutes } = route.params;
+  const {
+    student,
+    subjects,
+    allQuestions,
+    subjectQuestions,
+    currentSubject,
+    timerMinutes,
+  } = route.params;
 
+  // Get answers and timeLeft passed from lobby
+  const [answers, setAnswers] = useState(route.params.answers || {});
+  const [timeLeft, setTimeLeft] = useState(route.params.timeLeft || timerMinutes * 60);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
-  const [timeLeft, setTimeLeft] = useState(timerMinutes * 60);
-  const [autoSubmitModal, setAutoSubmitModal] = useState(false);
-  const [warnModal, setWarnModal] = useState(false);
-  const [unansweredList, setUnansweredList] = useState([]);
+  const [switchModal, setSwitchModal] = useState(false);
   const timerRef = useRef(null);
 
   useEffect(() => {
@@ -38,7 +43,8 @@ const SimulationQuizScreen = ({ route, navigation }) => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current);
-          setAutoSubmitModal(true);
+          // Time up — go back to lobby which will handle auto submit
+          goBackToLobby(true);
           return 0;
         }
         return prev - 1;
@@ -60,8 +66,16 @@ const SimulationQuizScreen = ({ route, navigation }) => {
     return COLORS.error;
   };
 
+  // Tap selected option again to unselect
   const handleSelectOption = (option) => {
-    setAnswers((prev) => ({ ...prev, [currentIndex]: option }));
+    const globalIndex = subjectQuestions[currentIndex].globalIndex;
+    if (answers[globalIndex] === option) {
+      const updated = { ...answers };
+      delete updated[globalIndex];
+      setAnswers(updated);
+    } else {
+      setAnswers((prev) => ({ ...prev, [globalIndex]: option }));
+    }
   };
 
   const handlePrevious = () => {
@@ -69,192 +83,74 @@ const SimulationQuizScreen = ({ route, navigation }) => {
   };
 
   const handleNext = () => {
-    if (currentIndex + 1 < questions.length) setCurrentIndex(currentIndex + 1);
-  };
-
-  const handleSubmitPress = () => {
-    const unanswered = questions
-      .map((_, index) => index)
-      .filter((index) => !answers[index]);
-
-    if (unanswered.length > 0) {
-      setUnansweredList(unanswered.map((i) => i + 1));
-      setWarnModal(true);
+    if (currentIndex + 1 < subjectQuestions.length) {
+      setCurrentIndex(currentIndex + 1);
     } else {
-      submitQuiz();
+      // Reached last question — auto go back to lobby
+      goBackToLobby(false);
     }
   };
 
-  const submitQuiz = () => {
+  // Return to lobby carrying updated answers and remaining time
+  const goBackToLobby = (timeUp) => {
     clearInterval(timerRef.current);
-
-    try {
-      const db = getDb();
-      const today = new Date().toISOString();
-
-      // Build final answers array
-      const finalAnswers = questions.map((question, index) => ({
-        question_id: question.id,
-        question: question,
-        student_answer: answers[index] || null,
-        is_correct:
-          answers[index] !== undefined &&
-          answers[index] === question.correct_option,
-        simulation_subject: question.simulation_subject,
-      }));
-
-      // Calculate scores per subject
-      // Each subject is marked out of 100 regardless of question count
-      const subjectScores = {};
-      for (const subject of subjects) {
-        const subjectAnswers = finalAnswers.filter(
-          (a) => a.simulation_subject === subject
-        );
-        const subjectTotal = subjectAnswers.length;
-        const subjectCorrect = subjectAnswers.filter((a) => a.is_correct).length;
-        // Scale to 100 marks per subject
-        const subjectScore =
-          subjectTotal > 0
-            ? Math.round((subjectCorrect / subjectTotal) * 100)
-            : 0;
-        subjectScores[subject] = {
-          correct: subjectCorrect,
-          total: subjectTotal,
-          score: subjectScore,
-        };
-      }
-
-      // Total score out of 400
-      const totalScore = Object.values(subjectScores).reduce(
-        (sum, s) => sum + s.score,
-        0
-      );
-
-      const overallCorrect = finalAnswers.filter((a) => a.is_correct).length;
-
-      // Save one session record for the simulation
-      const sessionResult = db.runSync(
-        `INSERT INTO sessions
-         (student_id, exam_body, subject, date_taken, total_questions, correct_answers, score_percentage)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          student.id,
-          'JAMB_SIMULATION',
-          subjects.join(', '),
-          today,
-          questions.length,
-          overallCorrect,
-          (totalScore / 400) * 100,
-        ]
-      );
-
-      const sessionId = sessionResult.lastInsertRowId;
-
-      // Save individual answers
-      for (const answer of finalAnswers) {
-        db.runSync(
-          `INSERT INTO answers (session_id, question_id, student_answer, is_correct)
-           VALUES (?, ?, ?, ?)`,
-          [
-            sessionId,
-            answer.question_id,
-            answer.student_answer || 'NOT_ANSWERED',
-            answer.is_correct ? 1 : 0,
-          ]
-        );
-
-        if (!answer.is_correct) {
-          db.runSync(
-            `INSERT OR IGNORE INTO notebook (student_id, question_id, date_added)
-             VALUES (?, ?, ?)`,
-            [student.id, answer.question_id, today]
-          );
-        }
-      }
-
-      // Go to simulation results screen
-      navigation.replace('SimulationResults', {
-        student,
-        subjects,
-        subjectScores,
-        totalScore,
-        answers: finalAnswers,
-        sessionId,
-      });
-
-    } catch (error) {
-      console.log('Simulation submit error:', error);
-    }
+    navigation.replace('SimulationLobby', {
+      student,
+      subjects,
+      allQuestions,
+      answers,
+      timeLeft: timeUp ? 0 : timeLeft,
+      timerMinutes,
+    });
   };
 
-  const currentQuestion = questions[currentIndex];
+  const handleSwitchSubject = () => {
+    setSwitchModal(true);
+  };
 
-  // Find which subject this question belongs to
-  const currentSubject = currentQuestion?.simulation_subject || '';
+  const currentQuestion = subjectQuestions[currentIndex];
+  const globalIndex = currentQuestion?.globalIndex;
 
   return (
     <SafeAreaView style={styles.safeArea}>
 
       {/* ── TOP BAR ── */}
       <View style={styles.topBar}>
-        <View>
-          <Text style={styles.topBarTitle}>JAMB Simulation</Text>
+        <View style={styles.topBarLeft}>
           <Text style={styles.topBarSubject}>{currentSubject}</Text>
+          <Text style={styles.topBarExam}>JAMB Simulation</Text>
         </View>
         <View style={[styles.timerBox, { backgroundColor: getTimerColor() }]}>
           <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
         </View>
       </View>
 
-      {/* ── QUESTION NUMBER GRID ── */}
-      <View style={styles.gridWrapper}>
-        <FlatList
-          data={questions}
-          keyExtractor={(_, index) => index.toString()}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.gridContent}
-          renderItem={({ item, index }) => (
-            <TouchableOpacity
-              style={[
-                styles.gridItem,
-                answers[index] !== undefined && styles.gridItemAnswered,
-                currentIndex === index && styles.gridItemCurrent,
-              ]}
-              onPress={() => setCurrentIndex(index)}
-            >
-              <Text style={[
-                styles.gridItemText,
-                answers[index] !== undefined && styles.gridItemTextAnswered,
-                currentIndex === index && styles.gridItemTextCurrent,
-              ]}>
-                {index + 1}
-              </Text>
-            </TouchableOpacity>
-          )}
-        />
-      </View>
+      {/* ── SWITCH SUBJECT BUTTON ── */}
+      <TouchableOpacity
+        style={styles.switchButton}
+        onPress={handleSwitchSubject}
+      >
+        <Text style={styles.switchButtonText}>⇄ Switch Subject</Text>
+      </TouchableOpacity>
 
+      {/* ── SCROLLABLE CONTENT ── */}
       <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
 
-        {/* Year tag */}
         <View style={styles.yearTag}>
           <Text style={styles.yearTagText}>
             JAMB {currentQuestion?.year}
           </Text>
         </View>
 
-        {/* Question */}
         <View style={styles.questionCard}>
           <Text style={styles.questionNumber}>
-            Question {currentIndex + 1} of {questions.length}
+            Question {currentIndex + 1} of {subjectQuestions.length}
           </Text>
           <Text style={styles.questionText}>
             {currentQuestion?.question_text}
           </Text>
         </View>
 
-        {/* Options */}
         <View style={styles.optionsContainer}>
           {[
             { key: 'A', value: currentQuestion?.option_a },
@@ -262,7 +158,7 @@ const SimulationQuizScreen = ({ route, navigation }) => {
             { key: 'C', value: currentQuestion?.option_c },
             { key: 'D', value: currentQuestion?.option_d },
           ].map((option) => {
-            const isSelected = answers[currentIndex] === option.key;
+            const isSelected = answers[globalIndex] === option.key;
             return (
               <TouchableOpacity
                 key={option.key}
@@ -294,7 +190,6 @@ const SimulationQuizScreen = ({ route, navigation }) => {
           })}
         </View>
 
-        {/* Navigation */}
         <View style={styles.navRow}>
           <TouchableOpacity
             style={[
@@ -307,83 +202,104 @@ const SimulationQuizScreen = ({ route, navigation }) => {
             <Text style={styles.navButtonText}>← Previous</Text>
           </TouchableOpacity>
 
-          {currentIndex + 1 < questions.length ? (
-            <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-              <Text style={styles.nextButtonText}>Next →</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.submitButton}
-              onPress={handleSubmitPress}
-            >
-              <Text style={styles.nextButtonText}>Submit</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={[
+              styles.nextButton,
+              currentIndex + 1 === subjectQuestions.length && styles.doneButton,
+            ]}
+            onPress={handleNext}
+          >
+            <Text style={styles.nextButtonText}>
+              {currentIndex + 1 === subjectQuestions.length
+                ? 'Done with Subject →'
+                : 'Next →'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {currentIndex + 1 < questions.length && (
-          <TouchableOpacity
-            style={styles.earlySubmitButton}
-            onPress={handleSubmitPress}
-          >
-            <Text style={styles.earlySubmitText}>Submit Exam Early</Text>
-          </TouchableOpacity>
-        )}
-
-        <View style={{ height: 40 }} />
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Auto submit modal */}
-      <Modal visible={autoSubmitModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalIcon}>⏰</Text>
-            <Text style={styles.modalTitle}>Time is Up!</Text>
-            <Text style={styles.modalMessage}>
-              Your 90 minutes have finished. You have been submitted automatically.
-            </Text>
-            <TouchableOpacity
-              style={styles.modalButton}
-              onPress={() => {
-                setAutoSubmitModal(false);
-                submitQuiz();
-              }}
-            >
-              <Text style={styles.modalButtonText}>See My Results</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      {/* ── QUESTION NUMBER GRID — FIXED AT BOTTOM ── */}
+      <View style={styles.gridContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.gridContent}
+        >
+          {subjectQuestions.map((q, index) => {
+            const gIndex = q.globalIndex;
+            const isAnswered = answers[gIndex] !== undefined;
+            const isCurrent = currentIndex === index;
+            return (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.gridItem,
+                  isAnswered && styles.gridItemAnswered,
+                  isCurrent && styles.gridItemCurrent,
+                ]}
+                onPress={() => setCurrentIndex(index)}
+              >
+                <Text style={[
+                  styles.gridItemText,
+                  isAnswered && styles.gridItemTextAnswered,
+                  isCurrent && styles.gridItemTextCurrent,
+                ]}>
+                  {index + 1}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
-      {/* Unanswered warning modal */}
-      <Modal visible={warnModal} transparent animationType="fade">
+      {/* Switch Subject Modal */}
+      <Modal visible={switchModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
-            <Text style={styles.modalIcon}>⚠️</Text>
-            <Text style={styles.modalTitle}>Unanswered Questions</Text>
+            <Text style={styles.modalTitle}>Switch Subject</Text>
             <Text style={styles.modalMessage}>
-              You have not answered question
-              {unansweredList.length > 1 ? 's' : ''}{' '}
-              {unansweredList.join(', ')}.
+              Your answers for {currentSubject} are saved.
+              Choose another subject to attempt.
             </Text>
-            <Text style={styles.modalMessage}>Do you still want to submit?</Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalButtonOutline}
-                onPress={() => setWarnModal(false)}
-              >
-                <Text style={styles.modalButtonOutlineText}>Go Back</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalButton}
-                onPress={() => {
-                  setWarnModal(false);
-                  submitQuiz();
-                }}
-              >
-                <Text style={styles.modalButtonText}>Submit Anyway</Text>
-              </TouchableOpacity>
-            </View>
+
+            {subjects
+              .filter((s) => s !== currentSubject)
+              .map((subject) => (
+                <TouchableOpacity
+                  key={subject}
+                  style={styles.subjectSwitchButton}
+                  onPress={() => {
+                    setSwitchModal(false);
+                    clearInterval(timerRef.current);
+
+                    const nextSubjectQuestions = allQuestions
+                      .map((q, index) => ({ ...q, globalIndex: index }))
+                      .filter((q) => q.simulation_subject === subject);
+
+                    navigation.replace('SimulationQuiz', {
+                      student,
+                      subjects,
+                      allQuestions,
+                      subjectQuestions: nextSubjectQuestions,
+                      currentSubject: subject,
+                      answers,
+                      timeLeft,
+                      timerMinutes,
+                    });
+                  }}
+                >
+                  <Text style={styles.subjectSwitchText}>{subject}</Text>
+                </TouchableOpacity>
+              ))}
+
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setSwitchModal(false)}
+            >
+              <Text style={styles.cancelText}>Cancel — Stay Here</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -404,34 +320,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  topBarTitle: { color: COLORS.white, fontSize: 16, fontWeight: 'bold' },
-  topBarSubject: { color: COLORS.secondary, fontSize: 12, marginTop: 2 },
+  topBarLeft: { flex: 1 },
+  topBarSubject: { color: COLORS.white, fontSize: 16, fontWeight: 'bold' },
+  topBarExam: { color: COLORS.secondary, fontSize: 12, marginTop: 2 },
   timerBox: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
   timerText: { color: COLORS.white, fontWeight: 'bold', fontSize: 18 },
-  gridWrapper: {
-    backgroundColor: COLORS.primary,
-    paddingBottom: 12,
-    paddingHorizontal: 8,
-  },
-  gridContent: { paddingHorizontal: 8, gap: 6 },
-  gridItem: {
-    width: 32,
-    height: 32,
-    borderRadius: 6,
-    backgroundColor: COLORS.white,
-    justifyContent: 'center',
+  switchButton: {
+    backgroundColor: 'rgba(26,26,46,0.08)',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
-  gridItemAnswered: {
-    backgroundColor: COLORS.success,
-    borderColor: COLORS.success,
+  switchButtonText: {
+    color: COLORS.primary,
+    fontWeight: 'bold',
+    fontSize: 13,
   },
-  gridItemCurrent: { borderColor: COLORS.secondary, borderWidth: 2 },
-  gridItemText: { fontSize: 11, fontWeight: 'bold', color: COLORS.textDark },
-  gridItemTextAnswered: { color: COLORS.white },
-  gridItemTextCurrent: { color: COLORS.secondary },
   scrollArea: { flex: 1, padding: 16 },
   yearTag: {
     backgroundColor: COLORS.secondary,
@@ -471,7 +377,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.border,
   },
-  optionSelected: { borderColor: COLORS.primary, backgroundColor: '#eef0ff' },
+  optionSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: '#eef0ff',
+  },
   optionBadge: {
     width: 32,
     height: 32,
@@ -493,7 +402,6 @@ const styles = StyleSheet.create({
   optionTextSelected: { color: COLORS.primary, fontWeight: '600' },
   navRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     gap: 10,
     marginBottom: 12,
   },
@@ -515,77 +423,72 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
-  submitButton: {
-    flex: 1,
-    backgroundColor: COLORS.secondary,
-    padding: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
+  doneButton: { backgroundColor: COLORS.success },
   nextButtonText: { color: COLORS.white, fontSize: 14, fontWeight: 'bold' },
-  earlySubmitButton: {
-    borderWidth: 2,
-    borderColor: COLORS.secondary,
-    padding: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 10,
+  gridContainer: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
   },
-  earlySubmitText: { color: COLORS.secondary, fontWeight: 'bold', fontSize: 14 },
+  gridContent: { paddingHorizontal: 8, gap: 6, alignItems: 'center' },
+  gridItem: {
+    width: 34,
+    height: 34,
+    borderRadius: 6,
+    backgroundColor: COLORS.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  gridItemAnswered: {
+    backgroundColor: COLORS.success,
+    borderColor: COLORS.success,
+  },
+  gridItemCurrent: { borderColor: COLORS.secondary, borderWidth: 2 },
+  gridItemText: { fontSize: 11, fontWeight: 'bold', color: COLORS.textDark },
+  gridItemTextAnswered: { color: COLORS.white },
+  gridItemTextCurrent: { color: COLORS.secondary },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 30,
+    justifyContent: 'flex-end',
   },
   modalBox: {
     backgroundColor: COLORS.white,
-    borderRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 24,
-    width: '100%',
-    alignItems: 'center',
+    paddingBottom: 40,
   },
-  modalIcon: { fontSize: 48, marginBottom: 12 },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: COLORS.textDark,
-    marginBottom: 10,
     textAlign: 'center',
-  },
-  modalMessage: {
-    fontSize: 14,
-    color: COLORS.textLight,
-    textAlign: 'center',
-    lineHeight: 22,
     marginBottom: 8,
   },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 8,
-    width: '100%',
+  modalMessage: {
+    fontSize: 13,
+    color: COLORS.textLight,
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 20,
   },
-  modalButton: {
-    flex: 1,
-    backgroundColor: COLORS.secondary,
-    padding: 14,
+  subjectSwitchButton: {
+    backgroundColor: COLORS.primary,
     borderRadius: 12,
-    alignItems: 'center',
-  },
-  modalButtonText: { color: COLORS.white, fontWeight: 'bold', fontSize: 14 },
-  modalButtonOutline: {
-    flex: 1,
-    borderWidth: 2,
-    borderColor: COLORS.primary,
     padding: 14,
-    borderRadius: 12,
     alignItems: 'center',
+    marginBottom: 10,
   },
-  modalButtonOutlineText: {
-    color: COLORS.primary,
+  subjectSwitchText: {
+    color: COLORS.white,
     fontWeight: 'bold',
     fontSize: 14,
   },
+  cancelButton: { padding: 14, alignItems: 'center' },
+  cancelText: { color: COLORS.textLight, fontSize: 14 },
 });

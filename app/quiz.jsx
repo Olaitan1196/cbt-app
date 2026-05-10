@@ -7,7 +7,6 @@ import {
   SafeAreaView,
   ScrollView,
   Modal,
-  FlatList,
 } from 'react-native';
 import { COLORS } from '../constants/colors';
 import { getDb } from '../database/db';
@@ -28,9 +27,6 @@ const QuizScreen = ({ route, navigation }) => {
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState({});
-  // answers is an object like { 0: 'A', 1: 'C', 3: 'B' }
-  // The key is the question index, the value is what the student picked
-
   const [timeLeft, setTimeLeft] = useState(timerMinutes * 60);
   const [loading, setLoading] = useState(true);
   const [autoSubmitModal, setAutoSubmitModal] = useState(false);
@@ -54,7 +50,6 @@ const QuizScreen = ({ route, navigation }) => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current);
-          // Show auto submit popup then submit
           setAutoSubmitModal(true);
           return 0;
         }
@@ -69,8 +64,6 @@ const QuizScreen = ({ route, navigation }) => {
       const limit = questionCount || 100;
       let results = [];
 
-      // Build year filter clause
-      // If yearFrom and yearTo are provided, filter by that range
       const yearClause =
         yearFrom && yearTo
           ? `AND year >= ${yearFrom} AND year <= ${yearTo}`
@@ -129,50 +122,45 @@ const QuizScreen = ({ route, navigation }) => {
   };
 
   const getTimerColor = () => {
-    const totalSeconds = timerMinutes * 60;
-    const percentLeft = (timeLeft / totalSeconds) * 100;
-    if (percentLeft > 50) return COLORS.success;
-    if (percentLeft > 25) return COLORS.warning;
+    const total = timerMinutes * 60;
+    const percent = (timeLeft / total) * 100;
+    if (percent > 50) return COLORS.success;
+    if (percent > 25) return COLORS.warning;
     return COLORS.error;
   };
 
-  // When student taps an option
+  // Tap same option again to unselect it
   const handleSelectOption = (option) => {
-    setAnswers((prev) => ({ ...prev, [currentIndex]: option }));
+    if (answers[currentIndex] === option) {
+      const updated = { ...answers };
+      delete updated[currentIndex];
+      setAnswers(updated);
+    } else {
+      setAnswers((prev) => ({ ...prev, [currentIndex]: option }));
+    }
   };
 
-  // Move to previous question
   const handlePrevious = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-    }
+    if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
   };
 
-  // Move to next question — no answer required
   const handleNext = () => {
-    if (currentIndex + 1 < questions.length) {
-      setCurrentIndex(currentIndex + 1);
-    }
+    if (currentIndex + 1 < questions.length) setCurrentIndex(currentIndex + 1);
   };
 
-  // When student taps Submit
   const handleSubmitPress = () => {
-    // Find all question indexes that have no answer
     const unanswered = questions
       .map((_, index) => index)
-      .filter((index) => !answers[index]);
+      .filter((index) => answers[index] === undefined);
 
     if (unanswered.length > 0) {
-      // Show warning with list of unanswered question numbers
       setUnansweredList(unanswered.map((i) => i + 1));
       setWarnModal(true);
     } else {
-      // All answered — submit directly
       submitQuiz();
     }
   };
 
-  // Called after auto submit popup or after warning is dismissed
   const submitQuiz = () => {
     clearInterval(timerRef.current);
 
@@ -281,40 +269,11 @@ const QuizScreen = ({ route, navigation }) => {
         </View>
       </View>
 
-      {/* ── QUESTION NUMBER GRID ── */}
-      {/* This shows all question numbers at the top.
-          Green = answered, White = not answered yet.
-          Tapping a number jumps directly to that question. */}
-      <View style={styles.gridWrapper}>
-        <FlatList
-          data={questions}
-          keyExtractor={(_, index) => index.toString()}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.gridContent}
-          renderItem={({ index }) => (
-            <TouchableOpacity
-              style={[
-                styles.gridItem,
-                answers[index] !== undefined && styles.gridItemAnswered,
-                currentIndex === index && styles.gridItemCurrent,
-              ]}
-              onPress={() => setCurrentIndex(index)}
-            >
-              <Text style={[
-                styles.gridItemText,
-                answers[index] !== undefined && styles.gridItemTextAnswered,
-                currentIndex === index && styles.gridItemTextCurrent,
-              ]}>
-                {index + 1}
-              </Text>
-            </TouchableOpacity>
-          )}
-        />
-      </View>
-
-      <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
-
+      {/* ── ALL CONTENT INSIDE ONE SCROLLVIEW ── */}
+      <ScrollView
+        style={styles.scrollArea}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Year tag */}
         <View style={styles.yearTag}>
           <Text style={styles.yearTagText}>
@@ -322,7 +281,7 @@ const QuizScreen = ({ route, navigation }) => {
           </Text>
         </View>
 
-        {/* Question Text */}
+        {/* Question */}
         <View style={styles.questionCard}>
           <Text style={styles.questionNumber}>
             Question {currentIndex + 1} of {questions.length}
@@ -372,9 +331,8 @@ const QuizScreen = ({ route, navigation }) => {
           })}
         </View>
 
-        {/* ── NAVIGATION BUTTONS ── */}
+        {/* Previous and Next buttons */}
         <View style={styles.navRow}>
-          {/* Previous button */}
           <TouchableOpacity
             style={[
               styles.navButton,
@@ -386,12 +344,8 @@ const QuizScreen = ({ route, navigation }) => {
             <Text style={styles.navButtonText}>← Previous</Text>
           </TouchableOpacity>
 
-          {/* Next or Submit button */}
           {currentIndex + 1 < questions.length ? (
-            <TouchableOpacity
-              style={styles.nextButton}
-              onPress={handleNext}
-            >
+            <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
               <Text style={styles.nextButtonText}>Next →</Text>
             </TouchableOpacity>
           ) : (
@@ -404,7 +358,7 @@ const QuizScreen = ({ route, navigation }) => {
           )}
         </View>
 
-        {/* Submit button always visible at bottom */}
+        {/* Submit Early button — only shows when not on last question */}
         {currentIndex + 1 < questions.length && (
           <TouchableOpacity
             style={styles.earlySubmitButton}
@@ -414,16 +368,54 @@ const QuizScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         )}
 
+        {/* ── QUESTION NUMBER GRID ── */}
+        {/* This sits right here in the scroll content, just below the buttons */}
+        <View style={styles.gridContainer}>
+          <Text style={styles.gridLabel}>Question Navigator</Text>
+          <View style={styles.gridWrapper}>
+            {questions.map((_, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.gridItem,
+                  answers[index] !== undefined && styles.gridItemAnswered,
+                  currentIndex === index && styles.gridItemCurrent,
+                ]}
+                onPress={() => setCurrentIndex(index)}
+              >
+                <Text style={[
+                  styles.gridItemText,
+                  answers[index] !== undefined && styles.gridItemTextAnswered,
+                  currentIndex === index && styles.gridItemTextCurrent,
+                ]}>
+                  {index + 1}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Legend */}
+          <View style={styles.legendRow}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendBox, { backgroundColor: COLORS.success }]} />
+              <Text style={styles.legendText}>Answered</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendBox, { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border }]} />
+              <Text style={styles.legendText}>Not answered</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendBox, { backgroundColor: COLORS.white, borderWidth: 2, borderColor: COLORS.secondary }]} />
+              <Text style={styles.legendText}>Current</Text>
+            </View>
+          </View>
+        </View>
+
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* ── AUTO SUBMIT MODAL ── */}
-      {/* Shows when timer runs out */}
-      <Modal
-        visible={autoSubmitModal}
-        transparent={true}
-        animationType="fade"
-      >
+      {/* Auto submit modal */}
+      <Modal visible={autoSubmitModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <Text style={styles.modalIcon}>⏰</Text>
@@ -444,38 +436,26 @@ const QuizScreen = ({ route, navigation }) => {
         </View>
       </Modal>
 
-      {/* ── UNANSWERED WARNING MODAL ── */}
-      {/* Shows when student submits with unanswered questions */}
-      <Modal
-        visible={warnModal}
-        transparent={true}
-        animationType="fade"
-      >
+      {/* Unanswered warning modal */}
+      <Modal visible={warnModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <Text style={styles.modalIcon}>⚠️</Text>
             <Text style={styles.modalTitle}>Unanswered Questions</Text>
             <Text style={styles.modalMessage}>
-              You have not answered the following question
-              {unansweredList.length > 1 ? 's' : ''}:
-            </Text>
-            <Text style={styles.unansweredNumbers}>
-              {unansweredList.join(', ')}
+              You have not answered question
+              {unansweredList.length > 1 ? 's' : ''}: {unansweredList.join(', ')}
             </Text>
             <Text style={styles.modalMessage}>
               Do you still want to submit?
             </Text>
-
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.modalButtonOutline}
                 onPress={() => setWarnModal(false)}
               >
-                <Text style={styles.modalButtonOutlineText}>
-                  Go Back
-                </Text>
+                <Text style={styles.modalButtonOutlineText}>Go Back</Text>
               </TouchableOpacity>
-
               <TouchableOpacity
                 style={styles.modalButton}
                 onPress={() => {
@@ -539,40 +519,6 @@ const styles = StyleSheet.create({
   topBarExam: { color: COLORS.secondary, fontSize: 12, marginTop: 2 },
   timerBox: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
   timerText: { color: COLORS.white, fontWeight: 'bold', fontSize: 18 },
-
-  // Question number grid
-  gridWrapper: {
-    backgroundColor: COLORS.primary,
-    paddingBottom: 12,
-    paddingHorizontal: 8,
-  },
-  gridContent: { paddingHorizontal: 8, gap: 6 },
-  gridItem: {
-    width: 32,
-    height: 32,
-    borderRadius: 6,
-    backgroundColor: COLORS.white,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  gridItemAnswered: {
-    backgroundColor: COLORS.success,
-    borderColor: COLORS.success,
-  },
-  gridItemCurrent: {
-    borderColor: COLORS.secondary,
-    borderWidth: 2,
-  },
-  gridItemText: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: COLORS.textDark,
-  },
-  gridItemTextAnswered: { color: COLORS.white },
-  gridItemTextCurrent: { color: COLORS.secondary },
-
   scrollArea: { flex: 1, padding: 16 },
   yearTag: {
     backgroundColor: COLORS.secondary,
@@ -631,16 +577,15 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
-  optionBadgeText: {
-    fontWeight: 'bold',
+  optionBadgeText: { fontWeight: 'bold', fontSize: 14, color: COLORS.textDark },
+  optionBadgeTextSelected: { color: COLORS.white },
+  optionText: {
+    flex: 1,
     fontSize: 14,
     color: COLORS.textDark,
+    lineHeight: 20,
   },
-  optionBadgeTextSelected: { color: COLORS.white },
-  optionText: { flex: 1, fontSize: 14, color: COLORS.textDark, lineHeight: 20 },
   optionTextSelected: { color: COLORS.primary, fontWeight: '600' },
-
-  // Navigation row
   navRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -656,14 +601,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
-  navButtonDisabled: {
-    borderColor: COLORS.border,
-  },
-  navButtonText: {
-    color: COLORS.primary,
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
+  navButtonDisabled: { borderColor: COLORS.border },
+  navButtonText: { color: COLORS.primary, fontWeight: 'bold', fontSize: 14 },
   nextButton: {
     flex: 1,
     backgroundColor: COLORS.primary,
@@ -678,23 +617,89 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
-  nextButtonText: {
-    color: COLORS.white,
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
+  nextButtonText: { color: COLORS.white, fontSize: 14, fontWeight: 'bold' },
   earlySubmitButton: {
     borderWidth: 2,
     borderColor: COLORS.secondary,
     padding: 14,
     borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 16,
   },
   earlySubmitText: {
     color: COLORS.secondary,
     fontWeight: 'bold',
     fontSize: 14,
+  },
+
+  // Question number grid — inside scroll content, below buttons
+  gridContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    padding: 16,
+    elevation: 1,
+  },
+  gridLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.textLight,
+    marginBottom: 12,
+    textAlign: 'center',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  gridWrapper: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'flex-start',
+  },
+  gridItem: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: COLORS.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  gridItemAnswered: {
+    backgroundColor: COLORS.success,
+    borderColor: COLORS.success,
+  },
+  gridItemCurrent: {
+    borderColor: COLORS.secondary,
+    borderWidth: 2,
+  },
+  gridItemText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.textDark,
+  },
+  gridItemTextAnswered: { color: COLORS.white },
+  gridItemTextCurrent: { color: COLORS.secondary },
+
+  // Legend
+  legendRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 14,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendBox: {
+    width: 14,
+    height: 14,
+    borderRadius: 4,
+  },
+  legendText: {
+    fontSize: 11,
+    color: COLORS.textLight,
   },
 
   // Modals
@@ -727,13 +732,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 8,
   },
-  unansweredNumbers: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.secondary,
-    textAlign: 'center',
-    marginBottom: 12,
-  },
   modalButtons: {
     flexDirection: 'row',
     gap: 10,
@@ -747,11 +745,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
-  modalButtonText: {
-    color: COLORS.white,
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
+  modalButtonText: { color: COLORS.white, fontWeight: 'bold', fontSize: 14 },
   modalButtonOutline: {
     flex: 1,
     borderWidth: 2,
