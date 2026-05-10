@@ -12,8 +12,10 @@ import TopicFilterScreen from './app/topic-filter';
 import QuizScreen from './app/quiz';
 import ResultsScreen from './app/results';
 import JambSimulationScreen from './app/jamb-simulation';
+import SimulationLobbyScreen from './app/simulation-lobby';
 import SimulationQuizScreen from './app/simulation-quiz';
 import SimulationResultsScreen from './app/simulation-results';
+import NotebookScreen from './app/notebook';
 
 const Stack = createStackNavigator();
 
@@ -59,8 +61,10 @@ useEffect(() => {
         <Stack.Screen name="Quiz" component={QuizScreen} />
         <Stack.Screen name="Results" component={ResultsScreen} />
         <Stack.Screen name="JambSimulation" component={JambSimulationScreen} />
+        <Stack.Screen name="SimulationLobby" component={SimulationLobbyScreen} />
         <Stack.Screen name="SimulationQuiz" component={SimulationQuizScreen} />
         <Stack.Screen name="SimulationResults" component={SimulationResultsScreen} />
+        <Stack.Screen name="Notebook" component={NotebookScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
