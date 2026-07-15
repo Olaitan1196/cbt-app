@@ -18,7 +18,7 @@ import {
   Alert,
 } from 'react-native';
 import { COLORS } from '../constants/colors';
-import { getDb } from '../database/db';
+import { getDb } from '../database/localCache';
 
 const NotebookScreen = ({ route, navigation }) => {
   const { student } = route.params;
@@ -36,9 +36,9 @@ const NotebookScreen = ({ route, navigation }) => {
     loadNotebook();
   }, []);
 
-  const loadNotebook = () => {
+  const loadNotebook = async () => {
     try {
-      const db = getDb();
+      const db = await getDb();
 
       // Load all notebook entries for this student
       // Join with questions table to get the full question details
@@ -79,7 +79,7 @@ const NotebookScreen = ({ route, navigation }) => {
   };
 
   // Delete one entry from notebook
-  const handleDelete = (notebookId) => {
+  const handleDelete = async (notebookId) => {
     Alert.alert(
       'Remove from Notebook',
       'Are you sure you want to remove this question from your notebook? This means you feel you have understood it.',
@@ -88,9 +88,9 @@ const NotebookScreen = ({ route, navigation }) => {
         {
           text: 'Remove',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
             try {
-              const db = getDb();
+              const db = await getDb();
               db.runSync(
                 'DELETE FROM notebook WHERE id = ?',
                 [notebookId]

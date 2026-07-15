@@ -3,7 +3,7 @@
 // The student picks the subject they want to practise.
 // After picking a subject, they move to Topic Filter screen.
 
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -12,43 +12,60 @@ import {
   TouchableOpacity,
   TextInput,
   SafeAreaView,
-} from 'react-native';
-import { COLORS } from '../constants/colors';
-import { SUBJECTS } from '../constants/subjects';
+  ActivityIndicator,
+  Alert,
+} from "react-native";
+import { COLORS } from "../constants/colors";
+import { SUBJECTS } from "../constants/subjects";
+import { downloadAndCacheQuestions } from "../database/localCache";
 
 export default function SubjectSelectScreen({ route, navigation }) {
   const { student, examBody, institution } = route.params;
-  const [searchText, setSearchText] = useState('');
+  const [searchText, setSearchText] = useState("");
+  const [downloadingSubject, setDownloadingSubject] = useState(null);
 
   // Get the subject list for the selected exam body
   const subjectList = SUBJECTS[examBody] || [];
 
   // Filter subjects based on what student types
   const filteredSubjects = subjectList.filter((subject) =>
-    subject.toLowerCase().includes(searchText.toLowerCase())
+    subject.toLowerCase().includes(searchText.toLowerCase()),
   );
 
   // When student taps a subject
-  const handleSelectSubject = (subject) => {
-    navigation.navigate('TopicFilter', {
-      student,
-      examBody,
-      institution,
-      subject,
-    });
+  const handleSelectSubject = async (subject) => {
+    if (downloadingSubject) return; // ignore taps while a download is in progress
+
+    setDownloadingSubject(subject);
+
+    try {
+      await downloadAndCacheQuestions(examBody, subject);
+      setDownloadingSubject(null);
+      navigation.navigate("TopicFilter", {
+        student,
+        examBody,
+        institution,
+        subject,
+      });
+    } catch (error) {
+      setDownloadingSubject(null);
+      Alert.alert(
+        "Could not load questions",
+        "Please check your internet connection and try again.",
+      );
+    }
   };
 
   // Show the right title depending on exam body
   const getHeaderTitle = () => {
-    if (examBody === 'POST_UTME' && institution) {
-      return institution.abbreviation + ' Post UTME';
+    if (examBody === "POST_UTME" && institution) {
+      return institution.abbreviation + " Post UTME";
     }
     return examBody;
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-
       {/* ── HEADER ── */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -74,7 +91,8 @@ export default function SubjectSelectScreen({ route, navigation }) {
 
       {/* ── SUBJECT COUNT ── */}
       <Text style={styles.resultCount}>
-        {filteredSubjects.length} subject{filteredSubjects.length !== 1 ? 's' : ''} available
+        {filteredSubjects.length} subject
+        {filteredSubjects.length !== 1 ? "s" : ""} available
       </Text>
 
       {/* ── SUBJECT LIST ── */}
@@ -86,6 +104,7 @@ export default function SubjectSelectScreen({ route, navigation }) {
           <TouchableOpacity
             style={styles.subjectCard}
             onPress={() => handleSelectSubject(item)}
+            disabled={downloadingSubject !== null}
           >
             {/* Subject Icon — first letter of subject name */}
             <View style={styles.subjectIcon}>
@@ -97,18 +116,19 @@ export default function SubjectSelectScreen({ route, navigation }) {
             {/* Subject Name */}
             <Text style={styles.subjectName}>{item}</Text>
 
-            {/* Arrow */}
-            <Text style={styles.arrow}>›</Text>
+            {/* Arrow, or spinner if this subject is downloading */}
+            {downloadingSubject === item ? (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            ) : (
+              <Text style={styles.arrow}>›</Text>
+            )}
           </TouchableOpacity>
         )}
-
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>📚</Text>
             <Text style={styles.emptyText}>No subject found</Text>
-            <Text style={styles.emptySubText}>
-              Try a different search word
-            </Text>
+            <Text style={styles.emptySubText}>Try a different search word</Text>
           </View>
         }
       />
@@ -135,7 +155,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.white,
   },
   headerSubtitle: {
@@ -171,8 +191,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     elevation: 1,
   },
   subjectIcon: {
@@ -180,27 +200,27 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 10,
     backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 14,
   },
   subjectIconText: {
     color: COLORS.white,
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   subjectName: {
     flex: 1,
     fontSize: 15,
     color: COLORS.textDark,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   arrow: {
     fontSize: 22,
     color: COLORS.textLight,
   },
   emptyContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingTop: 60,
   },
   emptyIcon: {
@@ -209,7 +229,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     color: COLORS.textDark,
   },
   emptySubText: {

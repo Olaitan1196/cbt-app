@@ -33,10 +33,47 @@ const SimulationQuizScreen = ({ route, navigation }) => {
   const [switchModal, setSwitchModal] = useState(false);
   const timerRef = useRef(null);
 
+  // Same passage/instruction handling as the main quiz screen
+  const [currentPassage, setCurrentPassage] = useState(null);
+  const [currentInstruction, setCurrentInstruction] = useState(null);
+
   useEffect(() => {
     startTimer();
+    updatePassageAndInstruction(0);
     return () => clearInterval(timerRef.current);
   }, []);
+
+  useEffect(() => {
+    updatePassageAndInstruction(currentIndex);
+  }, [currentIndex]);
+
+  // Finds the right passage and instruction for the current question —
+  // same logic as the main quiz screen. Looks backward within THIS
+  // subject's question list, since passage_group only makes sense
+  // among questions of the same subject.
+  const updatePassageAndInstruction = (index) => {
+    const question = subjectQuestions[index];
+    if (!question) return;
+
+    setCurrentInstruction(question.instruction || null);
+
+    if (question.passage) {
+      setCurrentPassage(question.passage);
+    } else if (question.passage_group) {
+      for (let i = index - 1; i >= 0; i--) {
+        if (
+          subjectQuestions[i].passage_group === question.passage_group &&
+          subjectQuestions[i].passage
+        ) {
+          setCurrentPassage(subjectQuestions[i].passage);
+          return;
+        }
+      }
+      setCurrentPassage(null);
+    } else {
+      setCurrentPassage(null);
+    }
+  };
 
   const startTimer = () => {
     timerRef.current = setInterval(() => {
@@ -111,6 +148,19 @@ const SimulationQuizScreen = ({ route, navigation }) => {
   const currentQuestion = subjectQuestions[currentIndex];
   const globalIndex = currentQuestion?.globalIndex;
 
+  // Build options dynamically — supports both 4-option and 5-option questions
+  const options = currentQuestion
+    ? [
+        { key: 'A', value: currentQuestion.option_a },
+        { key: 'B', value: currentQuestion.option_b },
+        { key: 'C', value: currentQuestion.option_c },
+        { key: 'D', value: currentQuestion.option_d },
+      ]
+    : [];
+  if (currentQuestion?.option_e) {
+    options.push({ key: 'E', value: currentQuestion.option_e });
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
 
@@ -142,6 +192,21 @@ const SimulationQuizScreen = ({ route, navigation }) => {
           </Text>
         </View>
 
+        {/* ── INSTRUCTION (if any) ── */}
+        {currentInstruction ? (
+          <View style={styles.instructionBox}>
+            <Text style={styles.instructionText}>{currentInstruction}</Text>
+          </View>
+        ) : null}
+
+        {/* ── PASSAGE (if any) ── */}
+        {currentPassage ? (
+          <View style={styles.passageBox}>
+            <Text style={styles.passageLabel}>📖 Read the passage below</Text>
+            <Text style={styles.passageText}>{currentPassage}</Text>
+          </View>
+        ) : null}
+
         <View style={styles.questionCard}>
           <Text style={styles.questionNumber}>
             Question {currentIndex + 1} of {subjectQuestions.length}
@@ -152,12 +217,7 @@ const SimulationQuizScreen = ({ route, navigation }) => {
         </View>
 
         <View style={styles.optionsContainer}>
-          {[
-            { key: 'A', value: currentQuestion?.option_a },
-            { key: 'B', value: currentQuestion?.option_b },
-            { key: 'C', value: currentQuestion?.option_c },
-            { key: 'D', value: currentQuestion?.option_d },
-          ].map((option) => {
+          {options.map((option) => {
             const isSelected = answers[globalIndex] === option.key;
             return (
               <TouchableOpacity
@@ -348,6 +408,35 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   yearTagText: { color: COLORS.white, fontSize: 11, fontWeight: '600' },
+  instructionBox: {
+    backgroundColor: '#fff8e1',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.warning,
+  },
+  instructionText: {
+    fontSize: 13,
+    color: COLORS.textDark,
+    lineHeight: 20,
+    fontStyle: 'italic',
+  },
+  passageBox: {
+    backgroundColor: '#e8f5e9',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.success,
+  },
+  passageLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.success,
+    marginBottom: 8,
+  },
+  passageText: { fontSize: 13, color: COLORS.textDark, lineHeight: 22 },
   questionCard: {
     backgroundColor: COLORS.white,
     borderRadius: 14,

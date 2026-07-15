@@ -24,8 +24,12 @@ CREATE TABLE IF NOT EXISTS questions (
   option_b TEXT NOT NULL,
   option_c TEXT NOT NULL,
   option_d TEXT NOT NULL,
-  correct_option TEXT NOT NULL,
+  option_e TEXT,                  -- Optional fifth option
+  correct_option TEXT NOT NULL,   -- A, B, C, D or E
   explanation TEXT,
+  instruction TEXT,               -- Short instruction above the question
+  passage TEXT,                   -- Comprehension text, poem or extract
+  passage_group INTEGER,          -- Groups questions under the same passage
   FOREIGN KEY (institution_id) REFERENCES institutions(id)
 );
 

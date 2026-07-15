@@ -11,7 +11,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { COLORS } from '../constants/colors';
-import { getDb } from '../database/db';
+import { getDb } from '../database/localCache';
 
 const QUESTION_COUNTS = [10, 20, 30, 50, 100];
 
@@ -43,13 +43,13 @@ const TopicFilterScreen = ({ route, navigation }) => {
     loadTopics();
   }, []);
 
-  const loadTopics = () => {
+  const loadTopics = async () => {
     try {
-      const db = getDb();
+      const db = await getDb();
       let results = [];
 
       if (examBody === 'POST_UTME' && institution) {
-        results = db.getAllSync(
+        results = await db.getAllSync(
           `SELECT DISTINCT topic FROM questions
            WHERE exam_body = ? AND subject = ? AND institution_id = ?
            AND topic IS NOT NULL AND topic != ''
@@ -57,7 +57,7 @@ const TopicFilterScreen = ({ route, navigation }) => {
           [examBody, subject, institution.id]
         );
       } else {
-        results = db.getAllSync(
+        results = await db.getAllSync(
           `SELECT DISTINCT topic FROM questions
            WHERE exam_body = ? AND subject = ?
            AND topic IS NOT NULL AND topic != ''
@@ -75,21 +75,21 @@ const TopicFilterScreen = ({ route, navigation }) => {
   };
 
   // Get all distinct years available for this selection
-  const getAvailableYears = (topic) => {
+  const getAvailableYears = async (topic) => {
     try {
-      const db = getDb();
+      const db = await getDb();
       let results = [];
 
       if (topic === null) {
         if (examBody === 'POST_UTME' && institution) {
-          results = db.getAllSync(
+          results = await db.getAllSync(
             `SELECT DISTINCT year FROM questions
              WHERE exam_body = ? AND subject = ? AND institution_id = ?
              ORDER BY year ASC`,
             [examBody, subject, institution.id]
           );
         } else {
-          results = db.getAllSync(
+          results = await db.getAllSync(
             `SELECT DISTINCT year FROM questions
              WHERE exam_body = ? AND subject = ?
              ORDER BY year ASC`,
@@ -98,14 +98,14 @@ const TopicFilterScreen = ({ route, navigation }) => {
         }
       } else {
         if (examBody === 'POST_UTME' && institution) {
-          results = db.getAllSync(
+          results = await db.getAllSync(
             `SELECT DISTINCT year FROM questions
              WHERE exam_body = ? AND subject = ? AND topic = ? AND institution_id = ?
              ORDER BY year ASC`,
             [examBody, subject, topic, institution.id]
           );
         } else {
-          results = db.getAllSync(
+          results = await db.getAllSync(
             `SELECT DISTINCT year FROM questions
              WHERE exam_body = ? AND subject = ? AND topic = ?
              ORDER BY year ASC`,
@@ -120,9 +120,9 @@ const TopicFilterScreen = ({ route, navigation }) => {
     }
   };
 
-  const getAvailableCount = (topic) => {
+  const getAvailableCount = async (topic) => {
     try {
-      const db = getDb();
+      const db = await getDb();
       let result;
 
       if (topic === null) {
@@ -161,9 +161,9 @@ const TopicFilterScreen = ({ route, navigation }) => {
     }
   };
 
-  const handleTopicTap = (topic) => {
-    const count = getAvailableCount(topic);
-    const years = getAvailableYears(topic);
+  const handleTopicTap = async(topic) => {
+    const count = await getAvailableCount(topic);
+    const years = await getAvailableYears(topic);
 
     setSelectedTopic(topic);
     setAvailableCount(count);
@@ -173,11 +173,13 @@ const TopicFilterScreen = ({ route, navigation }) => {
     setSelectedCount(null);
     setSelectedTimer(null);
     setYearMode('all');
-    setYearFrom(years[0] || null);
-    setYearTo(years[years.length - 1] || null);
+    // Safety check: make sure years array has items before accessing indices
+    setYearFrom(years.length > 0 ? years[0] : null);
+    setYearTo(years.length > 0 ? years[years.length - 1] : null);
 
     setModalVisible(true);
-  };
+    
+  }; 
 
   const handleStartQuiz = () => {
     if (!selectedCount) {

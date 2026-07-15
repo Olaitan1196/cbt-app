@@ -1,67 +1,66 @@
-// This is the Splash Screen.
-// It is the first thing a student sees when they open the app.
-// It shows the app logo and name for 3 seconds,
-// then automatically moves to the Onboarding screen
-// if the student is new, or Dashboard if they have used the app before.
-
-import React, { useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-} from 'react-native';
-import { COLORS } from '../constants/colors';
-import { getDb } from '../database/db';
-import { getDeviceId } from '../hooks/useDeviceId';
+import React, { useEffect } from "react";
+import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
+import { getCurrentProfileWithDeviceCheck } from "../services/authService";
+import { COLORS } from "../constants/colors";
 
 export default function SplashScreen({ navigation }) {
-
   useEffect(() => {
-    // Wait 2 seconds to show the splash, then decide where to go
-    const timer = setTimeout(() => {
-      checkIfStudentExists();
-    }, 2000);
+    const checkSession = async () => {
+      try {
+        // Ask Supabase: is anyone logged in right now, and is THIS
+        // the authorized device for that account?
+        const { profile, kickedOut } = await getCurrentProfileWithDeviceCheck();
 
-    return () => clearTimeout(timer);
-  }, []);
+        if (kickedOut) {
+          // This account was logged in on a different device.
+          // This phone has been signed out automatically.
+          navigation.replace("Login", { kickedOut: true });
+          return;
+        }
 
-  const checkIfStudentExists = async () => {
-    try {
-      const deviceId = await getDeviceId();
-      const db = getDb();
+        if (!profile) {
+          // Nobody is logged in. Send them to the Login screen.
+          // (Login screen has a link to Register for brand new students.)
+          navigation.replace("Login");
+          return;
+        }
 
-      // Check if this device already has a student profile
-      const student = await db.getFirstAsync(
-        'SELECT * FROM student WHERE device_id = ?',
-        [deviceId]
-      );
+        // Someone is logged in, and this device is authorized.
+        // Check if they still have access.
+        if (!profile.is_paid) {
+          const startDate = new Date(profile.trial_start_date);
+          const today = new Date();
+          const diffDays = Math.floor(
+            (today - startDate) / (1000 * 60 * 60 * 24),
+          );
 
-      if (student) {
-        // Student has used this app before — go straight to Dashboard
-        navigation.replace('Dashboard', { student });
-      } else {
-        // First time opening the app — go to Onboarding
-        navigation.replace('Onboarding');
+          if (diffDays > 3) {
+            navigation.replace("TrialExpired", { profile });
+            return;
+          }
+        }
+
+        // Logged in, authorized device, and either paid or still inside trial window.
+        navigation.replace("Dashboard", { profile });
+      } catch (error) {
+        console.log("Splash session check error:", error);
+        // If anything goes wrong checking the session, safest place
+        // to send the student is the Login screen.
+        navigation.replace("Login");
       }
-    } catch (error) {
-      console.log('Splash error:', error);
-    }
-  };
+    };
+
+    checkSession();
+  }, []);
 
   return (
     <View style={styles.container}>
-      {/* App Logo Area */}
-      <View style={styles.logoContainer}>
-        <Text style={styles.logoText}>📚</Text>
-      </View>
-
-      {/* App Name */}
-      <Text style={styles.appName}>EduPass CBT</Text>
-      <Text style={styles.tagline}>Your Exam. Your Future. Your Preparation.</Text>
-
-      {/* Loading dots at the bottom */}
-      <Text style={styles.loading}>Loading...</Text>
+      <Text style={styles.title}>PassOnce CBT</Text>
+      <ActivityIndicator
+        size="large"
+        color={COLORS.primary}
+        style={styles.spinner}
+      />
     </View>
   );
 }
@@ -69,38 +68,16 @@ export default function SplashScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fff",
   },
-  logoContainer: {
-    width: 120,
-    height: 120,
-    backgroundColor: COLORS.secondary,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
+  title: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: COLORS.primary,
   },
-  logoText: {
-    fontSize: 60,
-  },
-  appName: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: COLORS.white,
-    marginBottom: 8,
-  },
-  tagline: {
-    fontSize: 13,
-    color: COLORS.textLight,
-    textAlign: 'center',
-    paddingHorizontal: 40,
-  },
-  loading: {
-    position: 'absolute',
-    bottom: 40,
-    color: COLORS.textLight,
-    fontSize: 13,
+  spinner: {
+    marginTop: 20,
   },
 });

@@ -1,7 +1,3 @@
-// This is the real Dashboard Screen.
-// It is the main menu of the app.
-// The student sees this every time they open the app after onboarding.
-
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -10,11 +6,17 @@ import {
   ScrollView,
   TouchableOpacity,
   SafeAreaView,
+  Animated,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { COLORS } from '../constants/colors';
-import { getDb } from '../database/db';
+import { getDb } from '../database/localCache';
+import { getRank } from '../utils/ranks';
+import { getCurrentProfileWithDeviceCheck } from '../services/authService';
+import { fetchActiveBroadcasts } from '../services/broadcastService';
+import { getUnseenBroadcast, markBroadcastSeen } from '../database/localCache';
 
-// These are the exam bodies the student can choose from
 const EXAM_BODIES = [
   { id: 'JAMB', label: 'JAMB', icon: '📘', color: '#1a1a2e' },
   { id: 'WAEC', label: 'WAEC', icon: '📗', color: '#2e7d32' },
@@ -24,52 +26,168 @@ const EXAM_BODIES = [
   { id: 'JAMB_SIM', label: 'JAMB Simulation', icon: '🎯', color: '#00695c' },
 ];
 
-export default function DashboardScreen({ route, navigation }) {
-  const { student } = route.params;
+const DashboardScreen = ({ route, navigation }) => {
+  // ════════════════════════════════════════════════
+  // IDENTITY NOW COMES FROM SUPABASE, NOT LOCAL DATA
+  // "profile" is the true source of truth. "student"
+  // below is a bridge object shaped the OLD way, so
+  // screens we haven't rewritten yet (Notebook,
+  // Performance, Settings, etc.) keep working unchanged.
+  // ════════════════════════════════════════════════
+  const [profile, setProfile] = useState(route.params?.profile || null);
+  const [checkingAccess, setCheckingAccess] = useState(true);
+
+  const student = profile
+    ? {
+        id: profile.id,
+        name: profile.full_name,
+        class_level: profile.class_level,
+        is_paid: profile.is_paid,
+        trial_start_date: profile.trial_start_date,
+      }
+    : null;
+
   const [recentSessions, setRecentSessions] = useState([]);
   const [totalAttempted, setTotalAttempted] = useState(0);
   const [averageScore, setAverageScore] = useState(0);
+  const [currentRank, setCurrentRank] = useState(null);
+
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [welcomeMessage, setWelcomeMessage] = useState('');
+  const welcomeOpacity = useState(new Animated.Value(0))[0];
+  const [activeBroadcast, setActiveBroadcast] = useState(null);
+  const [broadcastModalVisible, setBroadcastModalVisible] = useState(false);
 
   useEffect(() => {
-    loadStudentStats();
+    verifyAccessThenLoad();
   }, []);
 
-  // Load the student's recent performance from the database
-  const loadStudentStats = async () => {
+  const verifyAccessThenLoad = async () => {
     try {
-      const db = getDb();
+      // Always re-check with Supabase directly, even if we already
+      // got a profile passed in from Splash. This also protects
+      // against a different device having claimed this account
+      // since this phone was last active.
+      const { profile: freshProfile, kickedOut } = await getCurrentProfileWithDeviceCheck();
 
-      // Get the last 3 sessions this student did
-      const sessions = await db.getAllAsync(
-        `SELECT * FROM sessions 
-         WHERE student_id = ? 
-         ORDER BY date_taken DESC 
+      if (kickedOut) {
+        navigation.replace('Login', { kickedOut: true });
+        return;
+      }
+
+      if (!freshProfile) {
+        navigation.replace('Login');
+        return;
+      }
+
+      setProfile(freshProfile);
+
+      if (!freshProfile.is_paid) {
+        const startDate = new Date(freshProfile.trial_start_date);
+        const today = new Date();
+        const diffDays = Math.floor(
+          (today - startDate) / (1000 * 60 * 60 * 24)
+        );
+
+        if (diffDays > 3) {
+          navigation.replace('TrialExpired', { profile: freshProfile });
+          return;
+        }
+      }
+
+      setCheckingAccess(false);
+      loadStudentStats(freshProfile);
+      checkForBroadcasts();
+    } catch (error) {
+      console.log('Dashboard access check error:', error);
+      navigation.replace('Login');
+    }
+  };
+
+  const checkForBroadcasts = async () => {
+    try {
+      const active = await fetchActiveBroadcasts();
+      const unseen = await getUnseenBroadcast(active);
+
+      if (unseen) {
+        setActiveBroadcast(unseen);
+        setBroadcastModalVisible(true);
+      }
+    } catch (error) {
+      console.log('Broadcast check error:', error);
+    }
+  };
+
+  const handleDismissBroadcast = async () => {
+    if (activeBroadcast) {
+      await markBroadcastSeen(activeBroadcast.id);
+    }
+    setBroadcastModalVisible(false);
+    setActiveBroadcast(null);
+  };
+
+  const loadStudentStats = async (activeProfile) => {
+    try {
+      const db = await getDb();
+
+      // Local quiz history is now linked using the Supabase
+      // profile id instead of an old local student id.
+      const sessions = db.getAllSync(
+        `SELECT * FROM sessions
+         WHERE student_id = ?
+         ORDER BY date_taken DESC
          LIMIT 3`,
-        [student.id]
+        [activeProfile.id]
       );
       setRecentSessions(sessions);
 
-      // Get total number of sessions
-      const totalResult = await db.getFirstAsync(
+      const totalResult = db.getFirstSync(
         `SELECT COUNT(*) as total FROM sessions WHERE student_id = ?`,
-        [student.id]
+        [activeProfile.id]
       );
       setTotalAttempted(totalResult?.total || 0);
 
-      // Get average score across all sessions
-      const avgResult = await db.getFirstAsync(
+      const avgResult = db.getFirstSync(
         `SELECT AVG(score_percentage) as avg FROM sessions WHERE student_id = ?`,
-        [student.id]
+        [activeProfile.id]
       );
-      setAverageScore(Math.round(avgResult?.avg || 0));
 
+      const avg = Math.round(avgResult?.avg || 0);
+      setAverageScore(avg);
+
+      const rank = getRank(avg);
+      setCurrentRank(rank);
+
+      if (rank.message) {
+        const message = rank.message(activeProfile.full_name);
+        setWelcomeMessage(message);
+        setShowWelcome(true);
+        showWelcomeAnimation();
+      }
     } catch (error) {
       console.log('Dashboard stats error:', error);
     }
   };
 
-  // When student taps an exam body
-const handleExamSelect = (exam) => {
+  const showWelcomeAnimation = () => {
+    Animated.sequence([
+      Animated.timing(welcomeOpacity, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.delay(3500),
+      Animated.timing(welcomeOpacity, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setShowWelcome(false);
+    });
+  };
+
+  const handleExamSelect = (exam) => {
     if (exam.id === 'JAMB_SIM') {
       navigation.navigate('JambSimulation', { student });
     } else if (exam.id === 'POST_UTME') {
@@ -83,7 +201,6 @@ const handleExamSelect = (exam) => {
     }
   };
 
-  // Get greeting based on time of day
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good Morning';
@@ -91,26 +208,53 @@ const handleExamSelect = (exam) => {
     return 'Good Evening';
   };
 
+  if (checkingAccess) {
+    return (
+      <SafeAreaView style={[styles.safeArea, styles.centerLoading]}>
+        <ActivityIndicator size="large" color={COLORS.white} />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
+
+      {showWelcome && (
+        <Animated.View style={[
+          styles.welcomeBanner,
+          {
+            opacity: welcomeOpacity,
+            backgroundColor: currentRank?.color || COLORS.secondary,
+          }
+        ]}>
+          <Text style={styles.welcomeBannerIcon}>{currentRank?.icon}</Text>
+          <Text style={styles.welcomeBannerText}>{welcomeMessage}</Text>
+        </Animated.View>
+      )}
+
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
 
-        {/* ── TOP HEADER ── */}
         <View style={styles.header}>
           <View>
             <Text style={styles.greeting}>{getGreeting()},</Text>
-            <Text style={styles.studentName}>{student.name} 👋</Text>
-            <Text style={styles.classLabel}>{student.class_level}</Text>
+            <Text style={styles.studentName}>{student?.name} 👋</Text>
+            <Text style={styles.classLabel}>{student?.class_level}</Text>
           </View>
-          <TouchableOpacity
-            style={styles.profileIcon}
-            onPress={() => navigation.navigate('Performance', { student })}
-          >
-            <Text style={styles.profileIconText}>📊</Text>
-          </TouchableOpacity>
+
+          {currentRank && (
+            <TouchableOpacity
+              style={[styles.rankBadge, { borderColor: currentRank.color }]}
+              onPress={() => navigation.navigate('Performance', { student })}
+            >
+              <Text style={styles.rankBadgeIcon}>{currentRank.icon}</Text>
+              <Text style={[styles.rankBadgeName, { color: currentRank.color }]}>
+                {currentRank.name}
+              </Text>
+              <Text style={styles.rankBadgeScore}>{averageScore}%</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* ── QUICK STATS ROW ── */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>{totalAttempted}</Text>
@@ -130,17 +274,36 @@ const handleExamSelect = (exam) => {
           </View>
         </View>
 
-        {/* ── CHOOSE EXAM SECTION ── */}
+        <TouchableOpacity
+          style={styles.geniusCompetitionCard}
+          onPress={() => navigation.navigate('GeniusCompetition', { student })}
+        >
+          <Text style={styles.geniusCompetitionIcon}>🏆</Text>
+          <View style={styles.geniusCompetitionTextGroup}>
+            <Text style={styles.geniusCompetitionTitle}>Genius Competition</Text>
+            <Text style={styles.geniusCompetitionSubtitle}>
+              Climb the tiers. Compete with students nationwide.
+            </Text>
+          </View>
+          <Text style={styles.geniusCompetitionArrow}>›</Text>
+        </TouchableOpacity>
+
         <Text style={styles.sectionTitle}>Choose Exam Body</Text>
         <Text style={styles.sectionSubtitle}>
           Select the exam you want to practise for
         </Text>
 
         <View style={styles.examGrid}>
-          {EXAM_BODIES.map((exam) => (
+          {EXAM_BODIES.map((exam, index) => (
             <TouchableOpacity
               key={exam.id}
-              style={[styles.examCard, { backgroundColor: exam.color }]}
+              style={[
+                styles.examCard,
+                { backgroundColor: exam.color },
+                EXAM_BODIES.length % 2 !== 0 &&
+                  index === EXAM_BODIES.length - 1 &&
+                  styles.examCardFull,
+              ]}
               onPress={() => handleExamSelect(exam)}
             >
               <Text style={styles.examIcon}>{exam.icon}</Text>
@@ -149,7 +312,6 @@ const handleExamSelect = (exam) => {
           ))}
         </View>
 
-        {/* ── RECENT ACTIVITY SECTION ── */}
         <Text style={styles.sectionTitle}>Recent Activity</Text>
 
         {recentSessions.length === 0 ? (
@@ -168,7 +330,10 @@ const handleExamSelect = (exam) => {
               <View>
                 <Text style={styles.sessionSubject}>{session.subject}</Text>
                 <Text style={styles.sessionExam}>
-                  {session.exam_body} — {session.date_taken?.slice(0, 10)}
+                  {session.exam_body === 'JAMB_SIMULATION'
+                    ? 'JAMB Simulation'
+                    : session.exam_body}{' '}
+                  — {session.date_taken?.slice(0, 10)}
                 </Text>
               </View>
               <View style={styles.sessionScore}>
@@ -180,7 +345,6 @@ const handleExamSelect = (exam) => {
           ))
         )}
 
-        {/* ── BOTTOM NAVIGATION BUTTONS ── */}
         <View style={styles.bottomNav}>
           <TouchableOpacity
             style={styles.navButton}
@@ -207,22 +371,99 @@ const handleExamSelect = (exam) => {
           </TouchableOpacity>
         </View>
 
-        {/* Bottom spacing */}
         <View style={{ height: 40 }} />
-
       </ScrollView>
+    <Modal
+        visible={broadcastModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleDismissBroadcast}
+      >
+        <View style={styles.broadcastOverlay}>
+          <View style={styles.broadcastBox}>
+            <Text style={styles.broadcastIcon}>📢</Text>
+            <Text style={styles.broadcastTitle}>{activeBroadcast?.title}</Text>
+            <Text style={styles.broadcastBody}>{activeBroadcast?.body}</Text>
+
+            <TouchableOpacity
+              style={styles.broadcastButton}
+              onPress={handleDismissBroadcast}
+            >
+              <Text style={styles.broadcastButtonText}>Got It</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
-}
+};
+
+export default DashboardScreen;
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.primary,
   },
+  geniusCompetitionCard: {
+    backgroundColor: '#1a1a2e',
+    marginHorizontal: 16,
+    marginTop: 20,
+    borderRadius: 16,
+    padding: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 3,
+  },
+  geniusCompetitionIcon: {
+    fontSize: 32,
+    marginRight: 14,
+  },
+  geniusCompetitionTextGroup: {
+    flex: 1,
+  },
+  geniusCompetitionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.white,
+  },
+  geniusCompetitionSubtitle: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 3,
+  },
+  geniusCompetitionArrow: {
+    fontSize: 26,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  centerLoading: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  welcomeBanner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 999,
+    padding: 20,
+    paddingTop: 50,
+    paddingBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  welcomeBannerIcon: { fontSize: 30 },
+  welcomeBannerText: {
+    flex: 1,
+    color: COLORS.white,
+    fontSize: 14,
+    lineHeight: 22,
+    fontWeight: '600',
   },
   header: {
     backgroundColor: COLORS.primary,
@@ -232,10 +473,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  greeting: {
-    fontSize: 14,
-    color: COLORS.textLight,
-  },
+  greeting: { fontSize: 14, color: COLORS.textLight },
   studentName: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -248,16 +486,20 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: '600',
   },
-  profileIcon: {
-    width: 48,
-    height: 48,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 24,
-    justifyContent: 'center',
+  rankBadge: {
     alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 14,
+    padding: 10,
+    borderWidth: 2,
+    minWidth: 70,
   },
-  profileIconText: {
-    fontSize: 22,
+  rankBadgeIcon: { fontSize: 22, marginBottom: 2 },
+  rankBadgeName: { fontSize: 11, fontWeight: 'bold' },
+  rankBadgeScore: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    marginTop: 2,
   },
   statsRow: {
     flexDirection: 'row',
@@ -273,11 +515,7 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: 'center',
   },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.white,
-  },
+  statNumber: { fontSize: 20, fontWeight: 'bold', color: COLORS.white },
   statLabel: {
     fontSize: 10,
     color: COLORS.textLight,
@@ -301,26 +539,18 @@ const styles = StyleSheet.create({
   examGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: 12,
-    gap: 10,
+    paddingHorizontal: 16,
+    gap: 12,
   },
   examCard: {
-    width: '45%',
+    width: '47%',
     borderRadius: 14,
     padding: 20,
     alignItems: 'center',
-    marginHorizontal: '2%',
-    marginBottom: 4,
   },
-  examIcon: {
-    fontSize: 32,
-    marginBottom: 8,
-  },
-  examLabel: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: COLORS.white,
-  },
+  examCardFull: { width: '100%' },
+  examIcon: { fontSize: 32, marginBottom: 8 },
+  examLabel: { fontSize: 14, fontWeight: 'bold', color: COLORS.white },
   emptyCard: {
     backgroundColor: COLORS.white,
     margin: 16,
@@ -328,10 +558,7 @@ const styles = StyleSheet.create({
     padding: 30,
     alignItems: 'center',
   },
-  emptyIcon: {
-    fontSize: 40,
-    marginBottom: 12,
-  },
+  emptyIcon: { fontSize: 40, marginBottom: 12 },
   emptyText: {
     fontSize: 15,
     color: COLORS.textDark,
@@ -361,11 +588,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.textDark,
   },
-  sessionExam: {
-    fontSize: 11,
-    color: COLORS.textLight,
-    marginTop: 3,
-  },
+  sessionExam: { fontSize: 11, color: COLORS.textLight, marginTop: 3 },
   sessionScore: {
     backgroundColor: COLORS.primary,
     borderRadius: 8,
@@ -388,17 +611,55 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     elevation: 2,
   },
-  navButton: {
-    alignItems: 'center',
-    padding: 8,
-  },
-  navIcon: {
-    fontSize: 24,
-  },
+  navButton: { alignItems: 'center', padding: 8 },
+  navIcon: { fontSize: 24 },
   navLabel: {
     fontSize: 11,
     color: COLORS.textDark,
     marginTop: 4,
     fontWeight: '600',
+  },
+  broadcastOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  broadcastBox: {
+    backgroundColor: COLORS.white,
+    borderRadius: 18,
+    padding: 26,
+    width: '100%',
+    alignItems: 'center',
+  },
+  broadcastIcon: {
+    fontSize: 40,
+    marginBottom: 10,
+  },
+  broadcastTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.textDark,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  broadcastBody: {
+    fontSize: 14,
+    color: COLORS.textDark,
+    textAlign: 'center',
+    lineHeight: 21,
+    marginBottom: 22,
+  },
+  broadcastButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+  },
+  broadcastButtonText: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+    fontSize: 15,
   },
 });

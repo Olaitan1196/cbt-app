@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import { COLORS } from '../constants/colors';
 import { SUBJECTS } from '../constants/subjects';
-import { getDb } from '../database/db';
+import { getDb } from '../database/localCache';
 
 // English is always included. Student picks from the rest.
 const ENGLISH = 'English Language';
@@ -72,9 +72,9 @@ const JambSimulationScreen = ({ route, navigation }) => {
     loadSimulationQuestions(allFourSubjects);
   };
 
-const loadSimulationQuestions = (subjects) => {
+const loadSimulationQuestions = async (subjects) => {
     try {
-      const db = getDb();
+      const db = await getDb();
       let allQuestions = [];
 
       for (const subject of subjects) {

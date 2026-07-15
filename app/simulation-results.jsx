@@ -128,7 +128,7 @@ const SimulationResultsScreen = ({ route, navigation }) => {
         <View style={styles.buttonGroup}>
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() => navigation.navigate('Dashboard', { student })}
+            onPress={() => navigation.popToTop()}
           >
             <Text style={styles.primaryButtonText}>Back to Dashboard</Text>
           </TouchableOpacity>

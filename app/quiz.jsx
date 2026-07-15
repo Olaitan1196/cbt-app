@@ -9,7 +9,7 @@ import {
   Modal,
 } from 'react-native';
 import { COLORS } from '../constants/colors';
-import { getDb } from '../database/db';
+import { getDb } from '../database/localCache';
 
 const QuizScreen = ({ route, navigation }) => {
   const {
@@ -32,6 +32,11 @@ const QuizScreen = ({ route, navigation }) => {
   const [autoSubmitModal, setAutoSubmitModal] = useState(false);
   const [warnModal, setWarnModal] = useState(false);
   const [unansweredList, setUnansweredList] = useState([]);
+
+  // For passage — we store the current passage to display
+  const [currentPassage, setCurrentPassage] = useState(null);
+  const [currentInstruction, setCurrentInstruction] = useState(null);
+
   const timerRef = useRef(null);
 
   useEffect(() => {
@@ -42,8 +47,45 @@ const QuizScreen = ({ route, navigation }) => {
   useEffect(() => {
     if (questions.length > 0) {
       startTimer();
+      updatePassageAndInstruction(0);
     }
   }, [questions]);
+
+  // When current question changes, update the passage and instruction
+  useEffect(() => {
+    if (questions.length > 0) {
+      updatePassageAndInstruction(currentIndex);
+    }
+  }, [currentIndex]);
+
+  // Find the correct passage and instruction for the current question
+  const updatePassageAndInstruction = (index) => {
+    const question = questions[index];
+    if (!question) return;
+
+    // Set instruction
+    setCurrentInstruction(question.instruction || null);
+
+    // Handle passage
+    if (question.passage) {
+      // This question itself has a passage — show it
+      setCurrentPassage(question.passage);
+    } else if (question.passage_group) {
+      // Look backwards to find the passage for this group
+      for (let i = index - 1; i >= 0; i--) {
+        if (
+          questions[i].passage_group === question.passage_group &&
+          questions[i].passage
+        ) {
+          setCurrentPassage(questions[i].passage);
+          return;
+        }
+      }
+      setCurrentPassage(null);
+    } else {
+      setCurrentPassage(null);
+    }
+  };
 
   const startTimer = () => {
     timerRef.current = setInterval(() => {
@@ -58,9 +100,9 @@ const QuizScreen = ({ route, navigation }) => {
     }, 1000);
   };
 
-  const loadQuestions = () => {
+  const loadQuestions = async () => {
     try {
-      const db = getDb();
+      const db = await getDb();
       const limit = questionCount || 100;
       let results = [];
 
@@ -68,44 +110,46 @@ const QuizScreen = ({ route, navigation }) => {
         yearFrom && yearTo
           ? `AND year >= ${yearFrom} AND year <= ${yearTo}`
           : '';
+      console.log(`Attempting fetch: Body=${examBody}, Subj=${subject}, Topic=${topic}, Limit=${limit}`);
 
       if (topic) {
         if (examBody === 'POST_UTME' && institution) {
-          results = db.getAllSync(
+          results = await db.getAllSync(
             `SELECT * FROM questions
              WHERE exam_body = ? AND subject = ? AND topic = ? AND institution_id = ?
              ${yearClause}
-             ORDER BY RANDOM() LIMIT ?`,
+             ORDER BY year ASC, id ASC LIMIT ?`,
             [examBody, subject, topic, institution.id, limit]
           );
         } else {
-          results = db.getAllSync(
+          results = await db.getAllSync(
             `SELECT * FROM questions
              WHERE exam_body = ? AND subject = ? AND topic = ?
              ${yearClause}
-             ORDER BY RANDOM() LIMIT ?`,
+             ORDER BY year ASC, id ASC LIMIT ?`,
             [examBody, subject, topic, limit]
           );
         }
       } else {
         if (examBody === 'POST_UTME' && institution) {
-          results = db.getAllSync(
+          results = await db.getAllSync(
             `SELECT * FROM questions
              WHERE exam_body = ? AND subject = ? AND institution_id = ?
              ${yearClause}
-             ORDER BY RANDOM() LIMIT ?`,
+             ORDER BY year ASC, id ASC LIMIT ?`,
             [examBody, subject, institution.id, limit]
           );
         } else {
-          results = db.getAllSync(
+          results = await db.getAllSync(
             `SELECT * FROM questions
              WHERE exam_body = ? AND subject = ?
              ${yearClause}
-             ORDER BY RANDOM() LIMIT ?`,
+             ORDER BY year ASC, id ASC LIMIT ?`,
             [examBody, subject, limit]
           );
         }
       }
+      console.log(`Successfully fetched ${results ? results.length : 0} questions from DB.`);
 
       setQuestions(results);
     } catch (error) {
@@ -129,7 +173,7 @@ const QuizScreen = ({ route, navigation }) => {
     return COLORS.error;
   };
 
-  // Tap same option again to unselect it
+  // Tap same option again to unselect
   const handleSelectOption = (option) => {
     if (answers[currentIndex] === option) {
       const updated = { ...answers };
@@ -161,11 +205,11 @@ const QuizScreen = ({ route, navigation }) => {
     }
   };
 
-  const submitQuiz = () => {
+  const submitQuiz = async () => {
     clearInterval(timerRef.current);
 
     try {
-      const db = getDb();
+      const db = await getDb();
       const today = new Date().toISOString();
 
       const finalAnswers = questions.map((question, index) => ({
@@ -182,7 +226,7 @@ const QuizScreen = ({ route, navigation }) => {
       const scorePercentage =
         totalCount > 0 ? (correctCount / totalCount) * 100 : 0;
 
-      const sessionResult = db.runSync(
+      const sessionResult = await db.runSync(
         `INSERT INTO sessions
          (student_id, exam_body, subject, date_taken, total_questions, correct_answers, score_percentage)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -192,7 +236,7 @@ const QuizScreen = ({ route, navigation }) => {
       const sessionId = sessionResult.lastInsertRowId;
 
       for (const answer of finalAnswers) {
-        db.runSync(
+        await db.runSync(
           `INSERT INTO answers (session_id, question_id, student_answer, is_correct)
            VALUES (?, ?, ?, ?)`,
           [
@@ -204,7 +248,7 @@ const QuizScreen = ({ route, navigation }) => {
         );
 
         if (!answer.is_correct) {
-          db.runSync(
+          await db.runSync(
             `INSERT OR IGNORE INTO notebook (student_id, question_id, date_added)
              VALUES (?, ?, ?)`,
             [student.id, answer.question_id, today]
@@ -255,6 +299,18 @@ const QuizScreen = ({ route, navigation }) => {
 
   const currentQuestion = questions[currentIndex];
 
+  // Build the list of options dynamically
+  // This handles both 4-option and 5-option questions
+  const options = [
+    { key: 'A', value: currentQuestion.option_a },
+    { key: 'B', value: currentQuestion.option_b },
+    { key: 'C', value: currentQuestion.option_c },
+    { key: 'D', value: currentQuestion.option_d },
+  ];
+  if (currentQuestion.option_e) {
+    options.push({ key: 'E', value: currentQuestion.option_e });
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
 
@@ -269,19 +325,31 @@ const QuizScreen = ({ route, navigation }) => {
         </View>
       </View>
 
-      {/* ── ALL CONTENT INSIDE ONE SCROLLVIEW ── */}
-      <ScrollView
-        style={styles.scrollArea}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Year tag */}
+      <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
+
+        {/* ── YEAR TAG ── */}
         <View style={styles.yearTag}>
           <Text style={styles.yearTagText}>
             {examBody} {currentQuestion.year}
           </Text>
         </View>
 
-        {/* Question */}
+        {/* ── INSTRUCTION (if any) ── */}
+        {currentInstruction ? (
+          <View style={styles.instructionBox}>
+            <Text style={styles.instructionText}>{currentInstruction}</Text>
+          </View>
+        ) : null}
+
+        {/* ── PASSAGE (if any) ── */}
+        {currentPassage ? (
+          <View style={styles.passageBox}>
+            <Text style={styles.passageLabel}>📖 Read the passage below</Text>
+            <Text style={styles.passageText}>{currentPassage}</Text>
+          </View>
+        ) : null}
+
+        {/* ── QUESTION ── */}
         <View style={styles.questionCard}>
           <Text style={styles.questionNumber}>
             Question {currentIndex + 1} of {questions.length}
@@ -291,14 +359,9 @@ const QuizScreen = ({ route, navigation }) => {
           </Text>
         </View>
 
-        {/* Options */}
+        {/* ── OPTIONS ── */}
         <View style={styles.optionsContainer}>
-          {[
-            { key: 'A', value: currentQuestion.option_a },
-            { key: 'B', value: currentQuestion.option_b },
-            { key: 'C', value: currentQuestion.option_c },
-            { key: 'D', value: currentQuestion.option_d },
-          ].map((option) => {
+          {options.map((option) => {
             const isSelected = answers[currentIndex] === option.key;
             return (
               <TouchableOpacity
@@ -331,7 +394,7 @@ const QuizScreen = ({ route, navigation }) => {
           })}
         </View>
 
-        {/* Previous and Next buttons */}
+        {/* ── NAVIGATION BUTTONS ── */}
         <View style={styles.navRow}>
           <TouchableOpacity
             style={[
@@ -358,7 +421,6 @@ const QuizScreen = ({ route, navigation }) => {
           )}
         </View>
 
-        {/* Submit Early button — only shows when not on last question */}
         {currentIndex + 1 < questions.length && (
           <TouchableOpacity
             style={styles.earlySubmitButton}
@@ -369,7 +431,6 @@ const QuizScreen = ({ route, navigation }) => {
         )}
 
         {/* ── QUESTION NUMBER GRID ── */}
-        {/* This sits right here in the scroll content, just below the buttons */}
         <View style={styles.gridContainer}>
           <Text style={styles.gridLabel}>Question Navigator</Text>
           <View style={styles.gridWrapper}>
@@ -394,7 +455,6 @@ const QuizScreen = ({ route, navigation }) => {
             ))}
           </View>
 
-          {/* Legend */}
           <View style={styles.legendRow}>
             <View style={styles.legendItem}>
               <View style={[styles.legendBox, { backgroundColor: COLORS.success }]} />
@@ -446,9 +506,7 @@ const QuizScreen = ({ route, navigation }) => {
               You have not answered question
               {unansweredList.length > 1 ? 's' : ''}: {unansweredList.join(', ')}
             </Text>
-            <Text style={styles.modalMessage}>
-              Do you still want to submit?
-            </Text>
+            <Text style={styles.modalMessage}>Do you still want to submit?</Text>
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.modalButtonOutline}
@@ -529,6 +587,44 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   yearTagText: { color: COLORS.white, fontSize: 11, fontWeight: '600' },
+
+  // Instruction box
+  instructionBox: {
+    backgroundColor: '#fff8e1',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.warning,
+  },
+  instructionText: {
+    fontSize: 13,
+    color: COLORS.textDark,
+    lineHeight: 20,
+    fontStyle: 'italic',
+  },
+
+  // Passage box
+  passageBox: {
+    backgroundColor: '#e8f5e9',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.success,
+  },
+  passageLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.success,
+    marginBottom: 8,
+  },
+  passageText: {
+    fontSize: 13,
+    color: COLORS.textDark,
+    lineHeight: 22,
+  },
+
   questionCard: {
     backgroundColor: COLORS.white,
     borderRadius: 14,
@@ -577,7 +673,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
-  optionBadgeText: { fontWeight: 'bold', fontSize: 14, color: COLORS.textDark },
+  optionBadgeText: {
+    fontWeight: 'bold',
+    fontSize: 14,
+    color: COLORS.textDark,
+  },
   optionBadgeTextSelected: { color: COLORS.white },
   optionText: {
     flex: 1,
@@ -631,8 +731,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 14,
   },
-
-  // Question number grid — inside scroll content, below buttons
   gridContainer: {
     backgroundColor: COLORS.white,
     borderRadius: 14,
@@ -668,41 +766,19 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.success,
     borderColor: COLORS.success,
   },
-  gridItemCurrent: {
-    borderColor: COLORS.secondary,
-    borderWidth: 2,
-  },
-  gridItemText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: COLORS.textDark,
-  },
+  gridItemCurrent: { borderColor: COLORS.secondary, borderWidth: 2 },
+  gridItemText: { fontSize: 12, fontWeight: 'bold', color: COLORS.textDark },
   gridItemTextAnswered: { color: COLORS.white },
   gridItemTextCurrent: { color: COLORS.secondary },
-
-  // Legend
   legendRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 16,
     marginTop: 14,
   },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  legendBox: {
-    width: 14,
-    height: 14,
-    borderRadius: 4,
-  },
-  legendText: {
-    fontSize: 11,
-    color: COLORS.textLight,
-  },
-
-  // Modals
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendBox: { width: 14, height: 14, borderRadius: 4 },
+  legendText: { fontSize: 11, color: COLORS.textLight },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',

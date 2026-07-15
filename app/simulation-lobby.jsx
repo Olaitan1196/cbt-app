@@ -15,7 +15,7 @@ import {
   Modal,
 } from 'react-native';
 import { COLORS } from '../constants/colors';
-import { getDb } from '../database/db';
+import { getDb } from '../database/localCache';
 
 const SimulationLobbyScreen = ({ route, navigation }) => {
   const {
@@ -135,11 +135,11 @@ const SimulationLobbyScreen = ({ route, navigation }) => {
     }
   };
 
-  const submitExam = () => {
+  const submitExam = async () => {
     clearInterval(timerRef.current);
 
     try {
-      const db = getDb();
+      const db = await getDb();
       const today = new Date().toISOString();
 
       const finalAnswers = allQuestions.map((question, index) => ({

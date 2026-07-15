@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import { initDatabase, seedSampleQuestions } from './database/db';
+import { initDatabase } from './database/localCache';
 import SplashScreen from './app/index';
-import OnboardingScreen from './app/onboarding';
+import LoginScreen from './app/login';
+import RegisterScreen from './app/register';
 import DashboardScreen from './app/dashboard';
 import InstitutionSelectScreen from './app/institution-select';
 import SubjectSelectScreen from './app/subject-select';
@@ -16,7 +17,17 @@ import SimulationLobbyScreen from './app/simulation-lobby';
 import SimulationQuizScreen from './app/simulation-quiz';
 import SimulationResultsScreen from './app/simulation-results';
 import NotebookScreen from './app/notebook';
-
+import PerformanceScreen from './app/performance';
+import SettingsScreen from './app/settings';
+import PaymentScreen from './app/payment';
+import TrialExpiredScreen from './app/trial-expired';
+import GeniusCompetitionScreen from './app/genius-competition';
+import CompetitionAttemptScreen from './app/competition-attempt';
+import CompetitionQuizScreen from './app/competition-quiz';
+import CompetitionAttemptResultsScreen from './app/competition-attempt-results';
+import GeniusTableScreen from './app/genius-table';
+import ForgotPasswordScreen from './app/forgot-password';
+import ResetPasswordScreen from './app/reset-password';
 const Stack = createStackNavigator();
 
 export default function App() {
@@ -25,7 +36,6 @@ export default function App() {
 
 useEffect(() => {
     initDatabase()
-      .then(() => seedSampleQuestions())
       .then(() => setDbReady(true))
       .catch((error) => setDbError(error.message));
   }, []);
@@ -53,7 +63,8 @@ useEffect(() => {
         screenOptions={{ headerShown: false }}
       >
         <Stack.Screen name="Splash" component={SplashScreen} />
-        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="Dashboard" component={DashboardScreen} />
         <Stack.Screen name="InstitutionSelect" component={InstitutionSelectScreen} />
         <Stack.Screen name="SubjectSelect" component={SubjectSelectScreen} />
@@ -65,6 +76,17 @@ useEffect(() => {
         <Stack.Screen name="SimulationQuiz" component={SimulationQuizScreen} />
         <Stack.Screen name="SimulationResults" component={SimulationResultsScreen} />
         <Stack.Screen name="Notebook" component={NotebookScreen} />
+        <Stack.Screen name="Performance" component={PerformanceScreen} />
+        <Stack.Screen name="Settings" component={SettingsScreen} />
+        <Stack.Screen name="Payment" component={PaymentScreen} />
+        <Stack.Screen name="TrialExpired" component={TrialExpiredScreen} />
+        <Stack.Screen name="GeniusCompetition" component={GeniusCompetitionScreen} />
+        <Stack.Screen name="CompetitionAttempt" component={CompetitionAttemptScreen} />
+        <Stack.Screen name="CompetitionQuiz" component={CompetitionQuizScreen} />
+        <Stack.Screen name="CompetitionAttemptResults" component={CompetitionAttemptResultsScreen} />
+        <Stack.Screen name="GeniusTable" component={GeniusTableScreen} />
+        <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

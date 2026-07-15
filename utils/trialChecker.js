@@ -2,10 +2,10 @@ import { getDb } from '../database/db';
 
 // Returns true if student can still use app free
 export const isTrialActive = async (deviceId) => {
-  const db = getDb();
+  const db = await getDb();
 
   // First check if device has paid license
-  const license = await db.getFirstAsync(
+  const license = await db.getFirstSync(
     'SELECT * FROM license WHERE device_id = ? AND is_active = 1',
     [deviceId]
   );
@@ -13,7 +13,7 @@ export const isTrialActive = async (deviceId) => {
   if (license) return { allowed: true, reason: 'paid' };
 
   // Check trial start date
-  const student = await db.getFirstAsync(
+  const student = await db.getFirstSync(
     'SELECT trial_start_date FROM student WHERE device_id = ?',
     [deviceId]
   );
