@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { initDatabase } from './database/localCache';
@@ -42,26 +43,31 @@ useEffect(() => {
 
   if (!dbReady && !dbError) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.text}>Loading...</Text>
-      </View>
+      <GestureHandlerRootView style={styles.flexOne}>
+        <View style={styles.center}>
+          <Text style={styles.text}>Loading...</Text>
+        </View>
+      </GestureHandlerRootView>
     );
   }
 
   if (dbError) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>Database Error: {dbError}</Text>
-      </View>
+      <GestureHandlerRootView style={styles.flexOne}>
+        <View style={styles.center}>
+          <Text style={styles.errorText}>Database Error: {dbError}</Text>
+        </View>
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator
-        initialRouteName="Splash"
-        screenOptions={{ headerShown: false }}
-      >
+    <GestureHandlerRootView style={styles.flexOne}>
+      <NavigationContainer>
+        <Stack.Navigator
+          initialRouteName="Splash"
+          screenOptions={{ headerShown: false }}
+        >
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />
@@ -87,8 +93,9 @@ useEffect(() => {
         <Stack.Screen name="GeniusTable" component={GeniusTableScreen} />
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
+        </Stack.Navigator>
+      </NavigationContainer>
+    </GestureHandlerRootView>
   );
 }
 
@@ -108,5 +115,8 @@ const styles = StyleSheet.create({
     color: 'red',
     padding: 20,
     textAlign: 'center',
+  },
+  flexOne: {
+    flex: 1,
   },
 });
