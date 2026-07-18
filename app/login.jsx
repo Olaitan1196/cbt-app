@@ -8,12 +8,15 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { loginStudent } from '../services/authService';
+import AppTextInput from '../components/AppTextInput';
 import { COLORS } from '../constants/colors';
 
 export default function LoginScreen({ navigation, route }) {
   const [identifier, setIdentifier] = useState(''); // username OR email
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -48,28 +51,40 @@ export default function LoginScreen({ navigation, route }) {
       <Text style={styles.subtitle}>Log in to continue your preparation</Text>
 
       <Text style={styles.label}>Username or Email</Text>
-      <TextInput
+      <AppTextInput
         style={styles.input}
         placeholder="Enter username or email"
+        placeholderTextColor={COLORS.textLight}
         value={identifier}
         onChangeText={setIdentifier}
         autoCapitalize="none"
       />
 
       <Text style={styles.label}>Password</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Enter your password"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
+      <View style={styles.passwordRow}>
+        <AppTextInput
+          style={styles.passwordInput}
+          placeholder="Enter your password"
+          placeholderTextColor={COLORS.textLight}
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry={!showPassword}
+        />
+        <TouchableOpacity
+          style={styles.eyeButton}
+          onPress={() => setShowPassword(!showPassword)}
+        >
+          <Ionicons
+            name={showPassword ? 'eye-off' : 'eye'}
+            size={20}
+            color={COLORS.textLight}
+          />
+        </TouchableOpacity>
+      </View>
 
       <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
         <Text style={styles.forgotLink}>Forgot Password?</Text>
       </TouchableOpacity>
-
-      <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}></TouchableOpacity>
 
       <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
         {loading ? (
@@ -116,6 +131,24 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 15,
     backgroundColor: '#fff',
+    color: COLORS.textDark,
+  },
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 12,
+    fontSize: 15,
+    color: COLORS.textDark,
+  },
+  eyeButton: {
+    paddingHorizontal: 12,
   },
   button: {
     backgroundColor: COLORS.primary,

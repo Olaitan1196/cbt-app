@@ -10,13 +10,13 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  TextInput,
   SafeAreaView,
   ActivityIndicator,
   Alert,
 } from "react-native";
 import { COLORS } from "../constants/colors";
 import { SUBJECTS } from "../constants/subjects";
+import AppTextInput from '../components/AppTextInput';
 import { downloadAndCacheQuestions } from "../database/localCache";
 
 export default function SubjectSelectScreen({ route, navigation }) {
@@ -80,7 +80,7 @@ export default function SubjectSelectScreen({ route, navigation }) {
 
       {/* ── SEARCH BOX ── */}
       <View style={styles.searchContainer}>
-        <TextInput
+        <AppTextInput
           style={styles.searchBox}
           placeholder="Search subject..."
           placeholderTextColor={COLORS.textLight}

@@ -10,11 +10,11 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  TextInput,
   SafeAreaView,
 } from 'react-native';
 import { COLORS } from '../constants/colors';
 import { INSTITUTIONS } from '../constants/institutions';
+import AppTextInput from '../components/AppTextInput';
 
 // The three category tabs
 const CATEGORIES = [
@@ -95,7 +95,7 @@ export default function InstitutionSelectScreen({ route, navigation }) {
 
       {/* ── SEARCH BOX ── */}
       <View style={styles.searchContainer}>
-        <TextInput
+        <AppTextInput
           style={styles.searchBox}
           placeholder="Search by name, abbreviation or state..."
           placeholderTextColor={COLORS.textLight}

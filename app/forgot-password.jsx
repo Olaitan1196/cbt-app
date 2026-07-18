@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { requestPasswordReset } from '../services/authService';
+import AppTextInput from '../components/AppTextInput';
 import { COLORS } from '../constants/colors';
 
 export default function ForgotPasswordScreen({ navigation }) {
@@ -57,9 +58,10 @@ export default function ForgotPasswordScreen({ navigation }) {
       </Text>
 
       <Text style={styles.label}>Username or Email</Text>
-      <TextInput
+      <AppTextInput
         style={styles.input}
         placeholder="Enter username or email"
+        placeholderTextColor={COLORS.textLight}
         value={identifier}
         onChangeText={setIdentifier}
         autoCapitalize="none"
@@ -112,6 +114,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     backgroundColor: '#fff',
     marginBottom: 10,
+    color: COLORS.textDark,
   },
   button: {
     backgroundColor: COLORS.primary,

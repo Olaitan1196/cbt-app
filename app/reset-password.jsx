@@ -8,12 +8,16 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { updatePassword } from '../services/authService';
+import AppTextInput from '../components/AppTextInput';
 import { COLORS } from '../constants/colors';
 
 export default function ResetPasswordScreen({ navigation }) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleReset = async () => {
@@ -58,22 +62,48 @@ export default function ResetPasswordScreen({ navigation }) {
       </Text>
 
       <Text style={styles.label}>New Password</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Enter new password"
-        value={newPassword}
-        onChangeText={setNewPassword}
-        secureTextEntry
-      />
+      <View style={styles.passwordRow}>
+        <AppTextInput
+          style={styles.passwordInput}
+          placeholder="Enter new password"
+          placeholderTextColor={COLORS.textLight}
+          value={newPassword}
+          onChangeText={setNewPassword}
+          secureTextEntry={!showPassword}
+        />
+        <TouchableOpacity
+          style={styles.eyeButton}
+          onPress={() => setShowPassword(!showPassword)}
+        >
+          <Ionicons
+            name={showPassword ? 'eye-off' : 'eye'}
+            size={20}
+            color={COLORS.textLight}
+          />
+        </TouchableOpacity>
+      </View>
 
       <Text style={styles.label}>Confirm New Password</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Re-enter new password"
-        value={confirmPassword}
-        onChangeText={setConfirmPassword}
-        secureTextEntry
-      />
+      <View style={styles.passwordRow}>
+        <AppTextInput
+          style={styles.passwordInput}
+          placeholder="Re-enter new password"
+          placeholderTextColor={COLORS.textLight}
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          secureTextEntry={!showConfirmPassword}
+        />
+        <TouchableOpacity
+          style={styles.eyeButton}
+          onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+        >
+          <Ionicons
+            name={showConfirmPassword ? 'eye-off' : 'eye'}
+            size={20}
+            color={COLORS.textLight}
+          />
+        </TouchableOpacity>
+      </View>
 
       <TouchableOpacity style={styles.button} onPress={handleReset} disabled={loading}>
         {loading ? (
@@ -110,14 +140,23 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     color: '#333',
   },
-  input: {
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 8,
-    padding: 12,
-    fontSize: 15,
     backgroundColor: '#fff',
     marginBottom: 10,
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 12,
+    fontSize: 15,
+    color: COLORS.textDark,
+  },
+  eyeButton: {
+    paddingHorizontal: 12,
   },
   button: {
     backgroundColor: COLORS.primary,

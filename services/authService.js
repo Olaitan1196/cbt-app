@@ -163,6 +163,22 @@ export const loginStudent = async (identifier, password) => {
   });
 
   if (error) {
+    // Supabase tells us WHY it failed. We only want to show a specific
+    // message for cases where the generic "wrong password" message
+    // would be confusing or misleading. Everything else still shows
+    // the safe, generic message so we don't leak account details.
+    if (error.message === 'Email not confirmed') {
+      throw new Error(
+        'Please confirm your email address before logging in. Check your inbox for a confirmation email From SupabaseAuth.'
+      );
+    }
+
+    if (error.message?.toLowerCase().includes('network')) {
+      throw new Error(
+        'Could not connect. Please check your internet connection and try again.'
+      );
+    }
+
     throw new Error('Incorrect username/email or password.');
   }
 

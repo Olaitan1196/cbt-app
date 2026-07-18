@@ -13,6 +13,7 @@ import {
 import * as WebBrowser from "expo-web-browser";
 import { COLORS } from "../constants/colors";
 import { supabase } from "../lib/supabase";
+import AppTextInput from '../components/AppTextInput';
 import { getDeviceId } from "../hooks/useDeviceId";
 
 const PRICE_DISPLAY = "₦100";
@@ -214,7 +215,7 @@ const PaymentScreen = ({ route, navigation }) => {
         </Text>
 
         <View style={styles.inputContainer}>
-          <TextInput
+          <AppTextInput
             style={styles.emailInput}
             placeholder="Enter your email address"
             placeholderTextColor={COLORS.textLight}

@@ -10,15 +10,15 @@ import {
   ScrollView,
   TouchableOpacity,
   SafeAreaView,
-  TextInput,
   Alert,
   Modal,
 } from "react-native";
 import { COLORS } from "../constants/colors";
 import { getDb, getCachedSubjects, downloadAndCacheQuestions } from '../database/localCache';
-import { updatePassword } from "../services/authService";
+import { updatePassword, logoutStudent } from "../services/authService";
+import AppTextInput from "../components/AppTextInput";
 
-const CLASS_LEVELS = ["SS1", "SS2", "SS3", "Graduate"];
+const CLASS_LEVELS = ["SSS1", "SSS2", "SSS3", "Graduate"];
 
 const APP_VERSION = "1.0.0";
 
@@ -151,6 +151,31 @@ const SettingsScreen = ({ route, navigation }) => {
       setChangingPassword(false);
       Alert.alert("Error", error.message || "Could not change password. Please try again.");
     }
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      "Log Out",
+      "Are you sure you want to log out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Log Out",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await logoutStudent();
+              navigation.reset({
+                index: 0,
+                routes: [{ name: "Login" }],
+              });
+            } catch (error) {
+              Alert.alert("Error", "Could not log out. Please try again.");
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -313,9 +338,12 @@ const SettingsScreen = ({ route, navigation }) => {
             connection is required to take practice tests.
           </Text>
           <Text style={styles.aboutCopyright}>
-            © 2025 PassOnce CBT. All rights reserved.
+            © 2026 PassOnce CBT. All rights reserved.
           </Text>
         </View>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Text style={styles.logoutButtonText}>🚪 Log Out</Text>
+        </TouchableOpacity>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -332,7 +360,7 @@ const SettingsScreen = ({ route, navigation }) => {
             <Text style={styles.modalTitle}>Edit Profile</Text>
 
             <Text style={styles.inputLabel}>Your Name</Text>
-            <TextInput
+            <AppTextInput
               style={styles.input}
               value={editName}
               onChangeText={setEditName}
@@ -392,7 +420,7 @@ const SettingsScreen = ({ route, navigation }) => {
             <Text style={styles.modalTitle}>Change Password</Text>
 
             <Text style={styles.inputLabel}>New Password</Text>
-            <TextInput
+            <AppTextInput
               style={styles.input}
               value={newPassword}
               onChangeText={setNewPassword}
@@ -402,7 +430,7 @@ const SettingsScreen = ({ route, navigation }) => {
             />
 
             <Text style={styles.inputLabel}>Confirm New Password</Text>
-            <TextInput
+            <AppTextInput
               style={styles.input}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
@@ -615,7 +643,19 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 6,
   },
-
+  logoutButton: {
+    backgroundColor: COLORS.error,
+    marginHorizontal: 16,
+    marginTop: 20,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+  },
+  logoutButtonText: {
+    color: COLORS.white,
+    fontWeight: "bold",
+    fontSize: 15,
+  },
   // Modal
   modalOverlay: {
     flex: 1,

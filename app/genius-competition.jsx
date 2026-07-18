@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   SafeAreaView,
   ScrollView,
-  TextInput,
   ActivityIndicator,
   Alert,
 } from 'react-native';
 import { COLORS } from '../constants/colors';
 import { SUBJECTS } from '../constants/subjects';
+import AppTextInput from '../components/AppTextInput';
 import {
   getActiveSeason,
   getEntryTier,
@@ -214,7 +214,7 @@ const handleRegister = async () => {
 
         <Text style={styles.sectionTitle}>JAMB Registration Number</Text>
         <View style={styles.inputContainer}>
-          <TextInput
+          <AppTextInput
             style={styles.input}
             placeholder="Enter your JAMB reg number"
             placeholderTextColor={COLORS.textLight}
@@ -226,7 +226,7 @@ const handleRegister = async () => {
 
         <Text style={styles.sectionTitle}>Course of Study</Text>
         <View style={styles.inputContainer}>
-          <TextInput
+          <AppTextInput
             style={styles.input}
             placeholder="e.g. Medicine and Surgery"
             placeholderTextColor={COLORS.textLight}
